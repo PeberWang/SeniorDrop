@@ -1,6 +1,8 @@
-# PPE云端智能大礼包
+# PPE云端智能大礼包 (PPE CloudSmart GiftBox)
 
 为南开大学 PPE 实验班构建的云端智能课程资料系统。通过收集学长学姐上传的资料和心得体会，利用 AI 自动生成结构化的课程学习指南。
+
+> **愿景**：将分散在个人电脑里的课程经验和心得，变成一个可以沉淀、流通、持续生长的公共资源。如果做好了这个基础设施，可以复制到中国各个专业和本科班级，帮助凝聚经验、知识和视野，形成促进知识流动的微组织。
 
 ## 核心功能
 
@@ -49,8 +51,8 @@
 ### 1. 克隆仓库
 
 ```bash
-git clone git@github.com:PeberWang/PPE云端智能大礼包.git
-cd PPE云端智能大礼包
+git clone git@github.com:PeberWang/PPE-CloudSmart-GiftBox.git
+cd PPE-CloudSmart-GiftBox
 ```
 
 ### 2. 安装依赖
