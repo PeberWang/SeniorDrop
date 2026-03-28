@@ -1,0 +1,74 @@
+[
+  {
+    "course_id": 1,
+    "course_name": "世界经济概论",
+    "teacher": "雷鸣老师",
+    "exam_type": "开卷",
+    "files_count": 3,
+    "size_mb": 0.86
+  },
+  {
+    "course_id": 2,
+    "course_name": "中国政治思想史",
+    "teacher": "孙晓春老师",
+    "exam_type": "闭卷",
+    "files_count": 6,
+    "size_mb": 50.20
+  },
+  {
+    "course_id": 3,
+    "course_name": "中国经济概论",
+    "teacher": "龚关老师",
+    "exam_type": "闭卷",
+    "files_count": 57,
+    "size_mb": 121.44
+  },
+  {
+    "course_id": 4,
+    "course_name": "伦理学导论",
+    "teacher": "李虎老师",
+    "exam_type": "闭卷",
+    "files_count": 9,
+    "size_mb": 108.99
+  },
+  {
+    "course_id": 5,
+    "course_name": "外国经济学说史",
+    "teacher": "蒋雅文老师",
+    "exam_type": "闭卷",
+    "files_count": 27,
+    "size_mb": 56.93
+  },
+  {
+    "course_id": 6,
+    "course_name": "宪法学",
+    "teacher": "赵聚军老师",
+    "exam_type": "闭卷",
+    "files_count": 6,
+    "size_mb": 8.07
+  },
+  {
+    "course_id": 7,
+    "course_name": "概率论与数理统计",
+    "teacher": "刘会刚老师",
+    "exam_type": "闭卷",
+    "files_count": 5,
+    "size_mb": 11.30
+  },
+  {
+    "course_id": 8,
+    "course_name": "比较政治制度",
+    "teacher": "贾义猛老师",
+    "exam_type": "闭卷",
+    "files_count": 4,
+    "size_mb": 12.79
+  },
+  {
+    "course_id": 9,
+    "course_name": "西方政治思想史",
+    "teacher": "柳建文老师",
+    "exam_type": "闭卷",
+    "files_count": 10,
+    "size_mb": 101.15
+  }
+]
