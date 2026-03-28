@@ -178,7 +178,7 @@ doc_generator.generate_all_course_docs(courses)
 
 ### 5.2 智谱AI 401错误
 - **问题**：旧API Key失效
-- **解决**：更新为新Key `9319402d56ba4f65b5dfe84539fc2545.V5bRJd9C3YNrh4jq`
+- **解决**：更新为新的API Key（已移至 .env 环境变量管理）
 - **状态**：✅ 已修复
 
 ### 5.3 首次运行部分文档为空
