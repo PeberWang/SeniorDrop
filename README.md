@@ -1,99 +1,192 @@
-# PPE云端智能大礼包 (PPE CloudSmart GiftBox)
+# PPE云端智能大礼包
 
-为南开大学 PPE 实验班构建的云端智能课程资料系统。通过收集学长学姐上传的资料和心得体会，利用 AI 自动生成结构化的课程学习指南。
+> 南开大学PPE专业课程资料智能管理与分发系统
 
-> **愿景**：将分散在个人电脑里的课程经验和心得，变成一个可以沉淀、流通、持续生长的公共资源。如果做好了这个基础设施，可以复制到中国各个专业和本科班级，帮助凝聚经验、知识和视野，形成促进知识流动的微组织。
+## 📋 项目简介
 
-## 核心功能
+PPE云端智能大礼包是一个基于飞书开放平台的知识库自动构建系统，旨在帮助PPE专业学生：
+- 📚 系统化管理各学年课程资料
+- 📝 智能生成课程学习指南
+- 🔗 打通知识库、文档、多维表格的完整链路
+- 🤖 利用AI自动提取学长学姐的经验心得
 
-- **资料上传与管理**：批量扫描本地资料包，按课程、类型、年级分类整理
-- **心得体会收集**：收集学长学姐的课程心得（可由 AI 生成示例）
-- **AI 文档生成**：基于智谱AI，自动生成包含概述、难点分析、老师偏好、资料串讲等内容的课程文档
-- **飞书知识库集成**：自动创建知识库结构，将课程文档上传至飞书多维表格和知识库
+## 🚀 快速开始
 
-## 技术栈
-
-- **Python 3.10+**
-- **智谱AI**（GLM-4-Flash）：AI 文本生成
-- **飞书开放平台 API**：知识库、多维表格、云文档
-- **httpx**：异步 HTTP 客户端
-
-## 项目结构
-
-```
-├── .env.example          # 环境变量模板
-├── .gitignore
-├── README.md
-├── requirements.txt
-├── docs/                 # 文档与日志
-│   ├── 课程教改目录.md
-│   ├── 汇报文档.docx
-│   ├── 实施日志.md
-│   ├── issue_log.md
-│   └── 知识库.md
-└── ppe_demo/             # 核心代码
-    ├── config.py         # 配置管理（从 .env 读取）
-    ├── main.py           # 主流程
-    ├── models.py         # 数据模型
-    ├── init_wiki.py      # 飞书知识库初始化
-    ├── data/             # 课程数据 (JSON)
-    ├── templates/        # 提示词模板
-    └── services/
-        ├── llm_service.py         # 智谱AI服务
-        ├── feishu_service.py      # 飞书API服务
-        ├── upload_service.py      # 资料上传服务
-        ├── experience_service.py  # 心得体会服务
-        └── doc_generator.py       # 文档生成服务
-```
-
-## 安装部署
-
-### 1. 克隆仓库
+### 1. 环境准备
 
 ```bash
-git clone git@github.com:PeberWang/PPE-CloudSmart-GiftBox.git
-cd PPE-CloudSmart-GiftBox
-```
+# 克隆项目
+git clone <repo-url>
+cd PPE云端智能大礼包
 
-### 2. 安装依赖
-
-```bash
+# 安装依赖
 pip install -r requirements.txt
 ```
 
-### 3. 配置环境变量
+### 2. 配置环境变量
 
-```bash
-cp .env.example .env
+复制 `.env.example` 为 `.env` 并填写以下配置：
+
+```env
+# 飞书配置
+FEISHU_APP_ID=your_app_id
+FEISHU_APP_SECRET=your_app_secret
+
+# 智谱AI配置
+ZHIPU_API_KEY=your_api_key
 ```
 
-编辑 `.env` 文件，填入真实的 API 凭据：
-
-- `FEISHU_APP_ID` / `FEISHU_APP_SECRET`：飞书应用凭证
-- `ZHIPU_API_KEY`：智谱AI API Key
-- `MATERIALS_BASE`：本地资料包路径（可选，默认指向南开PPE资料包）
-
-### 4. 运行
+### 3. 一键部署
 
 ```bash
-cd ppe_demo
-python main.py          # 运行核心流程Demo
-python init_wiki.py     # 初始化飞书知识库结构
+# 完整部署（推荐首次使用）
+python deploy.py --mode full
+
+# 其他模式
+python deploy.py --mode wiki      # 仅创建知识库
+python deploy.py --mode tables    # 仅创建多维表格
+python deploy.py --mode docs      # 仅生成文档
+python deploy.py --mode link      # 仅关联链接
 ```
 
-## 使用方法
+## 📖 核心功能
 
-1. **运行 Demo**：`python ppe_demo/main.py` 会扫描本地资料包，生成示例心得，并调用 AI 生成课程文档
-2. **初始化知识库**：`python ppe_demo/init_wiki.py` 在飞书中创建 PPE 知识库的目录结构
-3. **输出文件**：生成的课程文档保存在 `ppe_demo/output/course_docs/` 目录下
+### 1. 知识库自动构建
 
-## 开发计划
+- 创建"PPE云端智能大礼包"知识空间
+- 按学年创建节点（大一/大二/大三/大四）
+- 每门课程自动生成知识库节点
 
-- [ ] 支持更多课程和学期
-- [ ] 飞书机器人自动同步文档
-- [ ] 多维表格前端展示
-- [ ] 支持更多 AI 模型
+### 2. 多维表格管理
 
-## 许可
+每个学年一个多维表格，包含字段：
+- 课程名称
+- 授课老师
+- 开课学期
+- 课程类型
+- 考试形式
+- 学习指南（自动关联文档链接）
+- 资料数量
+- 贡献者
+- 最后更新时间
 
-本项目仅供南开大学 PPE 实验班内部使用。
+### 3. 智能文档生成
+
+基于V3文档结构：
+1. 课程内容概述
+2. 学习难点
+3. 老师偏好
+4. 资料分类列表
+5. 资料串讲
+6. 贡献者列表
+
+### 4. 完整用户链路
+
+```
+学生 → 飞书知识库 → 学年多维表格 → 课程详情 → 学习指南文档 → 资料下载
+```
+
+## 🛠️ 技术架构
+
+```
+PPE云端智能大礼包/
+├── deploy.py                  # 统一部署入口
+├── .env                       # 环境变量配置
+├── requirements.txt           # Python依赖
+└── ppe_demo/
+    ├── config.py              # 全局配置
+    ├── models.py              # 数据模型
+    ├── data/                  # 数据文件
+    │   ├── courses.json       # 课程列表
+    │   ├── experiences.json   # 心得体会
+    │   └── materials.json     # 资料元信息
+    └── services/              # 核心服务
+        ├── feishu_service.py  # 飞书API封装
+        ├── wiki_builder.py    # 知识库构建
+        ├── table_service.py   # 多维表格管理
+        ├── doc_generator.py   # 文档生成
+        ├── link_service.py    # 关联服务
+        ├── llm_service.py     # 智谱AI调用
+        └── upload_service.py  # 资料上传
+```
+
+## 🔧 开发指南
+
+### 添加新课程
+
+编辑 `ppe_demo/config.py` 中的 `COURSES_BY_YEAR` 字典：
+
+```python
+COURSES_BY_YEAR = {
+    "大一": [
+        {
+            "name": "课程名称",
+            "teacher": "授课老师",
+            "semester": "开课学期",
+            "type": "必修/选修",
+            "exam": "考试形式"
+        },
+        ...
+    ]
+}
+```
+
+### 添加心得体会
+
+编辑 `ppe_demo/data/experiences.json`：
+
+```json
+[
+  {
+    "experience_id": "EXP0001",
+    "author": "贡献者",
+    "grade": "22级",
+    "course_name": "课程名称",
+    "score": "92",
+    "content": "心得体会内容..."
+  }
+]
+```
+
+## ⚠️ 注意事项
+
+1. **飞书权限**：需要开通以下权限
+   - `wiki:wiki` - 知识库管理
+   - `docx:document` - 云文档
+   - `bitable:app` - 多维表格
+   - `drive:file:upload` - 文件上传
+
+2. **API频率限制**：
+   - Docx块操作：3次/秒
+   - 系统已内置退避重试机制
+
+3. **知识空间复用**：
+   - 系统会先检查是否已存在同名空间
+   - 避免重复创建
+
+## 📝 更新日志
+
+### v2.0 (2026-03-30)
+- ✨ 重构为飞书云文档架构
+- 🔗 打通多维表格与知识库链接
+- 📄 文档自动上传到飞书
+- 🚀 统一部署入口
+
+### v1.0 (2026-02-28)
+- 📚 本地Markdown文档生成
+- 📝 心得体会管理
+- 🎯 AI智能提取
+
+## 📄 License
+
+MIT License
+
+## 👥 贡献者
+
+- 铭培（产品设计与需求）
+- 小劳（技术实现）
+- 南开大学PPE专业全体同学（资料贡献）
+
+---
+
+*Made with ❤️ for Nankai PPE*

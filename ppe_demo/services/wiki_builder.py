@@ -18,10 +18,9 @@ class WikiBuilder:
     """飞书知识库自动构建器
 
     功能：
-    - 创建知识空间（如果不存在则复用）
+    - 创建或复用知识空间
     - 创建"大一/大二/大三/大四"四个学年节点
     - 在每个学年节点下为每门课创建子节点（docx类型）
-    - 将课程文档关联到知识库节点
     """
 
     def __init__(self, feishu: FeishuService):
@@ -32,13 +31,16 @@ class WikiBuilder:
         """
         self.feishu = feishu
         self.space_id: Optional[str] = None
-        # 节点映射：{(学年, 课程名): node_token}
-        self.node_map: Dict[tuple, str] = {}
+        # 节点映射：{(学年, 课程名): {"node_token": ..., "obj_token": ...}}
+        self.node_map: Dict[tuple, dict] = {}
         # 学年根节点映射：{学年: node_token}
         self.year_node_map: Dict[str, str] = {}
 
-    async def init_space(self) -> str:
+    async def init_space(self, force_create: bool = False) -> str:
         """创建或获取知识空间
+
+        Args:
+            force_create: 是否强制创建新空间（即使同名空间已存在）
 
         Returns:
             space_id
@@ -46,19 +48,27 @@ class WikiBuilder:
         if self.space_id:
             return self.space_id
 
+        # 先尝试查找现有空间
+        print(f"\n🔍 查找知识空间 '{WIKI_SPACE_NAME}'...")
+        spaces = await self.feishu.list_wiki_spaces()
+
+        for space in spaces:
+            if space["name"] == WIKI_SPACE_NAME:
+                if not force_create:
+                    self.space_id = space["space_id"]
+                    print(f"  ✅ 找到现有空间，复用: {self.space_id}")
+                    return self.space_id
+                else:
+                    print(f"  ⚠️ 空间已存在，将创建新空间...")
+
+        # 未找到或强制创建
         try:
             result = await self.feishu.create_wiki_space(WIKI_SPACE_NAME)
             self.space_id = result["space"]["space_id"]
             print(f"  ✅ 知识空间创建成功: {self.space_id}")
-        except Exception:
-            # 空间可能已存在，尝试列出查找
-            print(f"  ⚠️ 知识空间可能已存在，尝试查找...")
-            # 如果 create_wiki_space 在空间已存在时抛异常，
-            # 需要手动在飞书后台获取 space_id 并设置
-            raise Exception(
-                f"无法创建知识空间 '{WIKI_SPACE_NAME}'。"
-                f"请检查飞书后台是否已存在同名空间，或手动设置 space_id。"
-            )
+        except Exception as e:
+            print(f"  ❌ 创建知识空间失败: {e}")
+            raise
 
         return self.space_id
 
@@ -71,29 +81,33 @@ class WikiBuilder:
         if not self.space_id:
             await self.init_space()
 
+        print(f"\n📚 创建学年节点...")
         for year_name in WIKI_YEAR_NODES:
             try:
-                result = await self._create_wiki_node(
+                result = await self.feishu.create_wiki_node(
+                    space_id=self.space_id,
                     title=year_name,
                     obj_type="docx"
                 )
                 token = result["data"]["node"]["node_token"]
+                obj_token = result["data"]["node"]["obj_token"]
                 self.year_node_map[year_name] = token
-                print(f"  ✅ 学年节点 [{year_name}]: {token}")
+                print(f"  ✅ [{year_name}]: {token}")
             except Exception as e:
                 print(f"  ❌ 创建学年节点 [{year_name}] 失败: {e}")
 
         return self.year_node_map
 
-    async def build_course_nodes(self) -> Dict[tuple, str]:
+    async def build_course_nodes(self) -> Dict[tuple, dict]:
         """为每个学年的每门课程创建知识库子节点
 
         Returns:
-            {(学年, 课程名): node_token} 字典
+            {(学年, 课程名): {"node_token": ..., "obj_token": ...}} 字典
         """
         if not self.year_node_map:
             await self.build_year_nodes()
 
+        print(f"\n📖 创建课程节点...")
         for year_name, courses in COURSES_BY_YEAR.items():
             parent_token = self.year_node_map.get(year_name)
             if not parent_token:
@@ -104,14 +118,19 @@ class WikiBuilder:
             for course in courses:
                 course_name = course["name"]
                 try:
-                    result = await self._create_wiki_node(
+                    result = await self.feishu.create_wiki_node(
+                        space_id=self.space_id,
                         title=course_name,
                         obj_type="docx",
                         parent_node_token=parent_token
                     )
-                    token = result["data"]["node"]["node_token"]
-                    self.node_map[(year_name, course_name)] = token
-                    print(f"    ✅ {course_name}: {token}")
+                    node_token = result["data"]["node"]["node_token"]
+                    obj_token = result["data"]["node"]["obj_token"]
+                    self.node_map[(year_name, course_name)] = {
+                        "node_token": node_token,
+                        "obj_token": obj_token
+                    }
+                    print(f"    ✅ {course_name}: {node_token}")
                 except Exception as e:
                     print(f"    ❌ {course_name} 失败: {e}")
 
@@ -150,52 +169,15 @@ class WikiBuilder:
 
         return result
 
-    async def _create_wiki_node(
-        self,
-        title: str,
-        obj_type: str = "docx",
-        parent_node_token: Optional[str] = None
-    ) -> dict:
-        """创建知识库节点
-
-        Args:
-            title: 节点标题
-            obj_type: 节点类型（docx/folder）
-            parent_node_token: 父节点token（None则放在空间根目录）
-
-        Returns:
-            API响应
-        """
-        if not self.space_id:
-            await self.init_space()
-
-        url = f"{self.feishu.base_url}/wiki/v2/spaces/{self.space_id}/nodes"
-        headers = await self.feishu._get_headers()
-
-        data = {
-            "obj_type": obj_type,
-            "node_title": title
-        }
-        if parent_node_token:
-            data["parent_node_token"] = parent_node_token
-
-        response = await self.feishu.client.post(url, headers=headers, json=data)
-        result = response.json()
-
-        if result.get("code") != 0:
-            raise Exception(f"创建节点失败 [{title}]: {result.get('msg')}")
-
-        return result
-
-    def get_course_node_token(self, year: str, course_name: str) -> Optional[str]:
-        """获取课程节点的token
+    def get_course_node(self, year: str, course_name: str) -> Optional[dict]:
+        """获取课程节点信息
 
         Args:
             year: 学年（大一/大二/大三/大四）
             course_name: 课程名称
 
         Returns:
-            node_token 或 None
+            {"node_token": ..., "obj_token": ...} 或 None
         """
         return self.node_map.get((year, course_name))
 
@@ -209,7 +191,37 @@ class WikiBuilder:
         Returns:
             飞书文档URL 或 None
         """
-        node_token = self.get_course_node_token(year, course_name)
-        if node_token and self.space_id:
-            return f"https://nkuyouth.feishu.cn/wiki/{node_token}"
+        node_info = self.get_course_node(year, course_name)
+        if node_info and self.space_id:
+            return f"https://nkuyouth.feishu.cn/wiki/{node_info['node_token']}"
         return None
+
+    def load_from_local(self) -> bool:
+        """从本地加载已保存的结构
+
+        Returns:
+            是否成功加载
+        """
+        try:
+            output_path = os.path.join(os.path.dirname(__file__), "..", "wiki_structure.json")
+            with open(output_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            self.space_id = data.get("space_id")
+            self.year_node_map = data.get("year_nodes", {})
+
+            # 重建 node_map
+            for key, value in data.get("course_nodes", {}).items():
+                year, course_name = key.split("-", 1)
+                self.node_map[(year, course_name)] = value
+
+            print(f"✅ 从本地加载知识库结构成功")
+            print(f"   空间ID: {self.space_id}")
+            print(f"   课程节点: {len(self.node_map)}")
+            return True
+        except FileNotFoundError:
+            print(f"⚠️ 本地未找到 wiki_structure.json")
+            return False
+        except Exception as e:
+            print(f"❌ 加载本地结构失败: {e}")
+            return False

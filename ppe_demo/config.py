@@ -8,10 +8,13 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# 加载 .env 文件（从 ppe_demo 目录向上查找）
+# 加载 .env 文件（从项目根目录）
 _env_path = Path(__file__).parent.parent / ".env"
 if _env_path.exists():
     load_dotenv(_env_path)
+    # print(f"[OK] 已加载环境变量: {_env_path}")
+# else:
+    # print(f"[WARN] 未找到 .env 文件: {_env_path}")
 
 # 基础路径
 BASE_DIR = Path(__file__).parent
