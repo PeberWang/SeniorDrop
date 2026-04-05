@@ -385,6 +385,59 @@ class FeishuService:
         else:
             raise Exception(f"更新记录失败: {result.get('msg')}")
 
+    async def list_bitable_fields(
+        self,
+        app_token: str,
+        table_id: str
+    ) -> List[dict]:
+        """列出多维表格字段"""
+        url = f"{self.base_url}/bitable/v1/apps/{app_token}/tables/{table_id}/fields"
+        headers = await self._get_headers()
+
+        response = await self.client.get(url, headers=headers)
+        result = response.json()
+
+        if result.get("code") == 0:
+            return result["data"].get("items", [])
+        else:
+            raise Exception(f"获取字段列表失败: {result.get('msg')}")
+
+    async def delete_bitable_field(
+        self,
+        app_token: str,
+        table_id: str,
+        field_id: str
+    ) -> Dict:
+        """删除多维表格字段"""
+        url = f"{self.base_url}/bitable/v1/apps/{app_token}/tables/{table_id}/fields/{field_id}"
+        headers = await self._get_headers()
+
+        response = await self.client.delete(url, headers=headers)
+        result = response.json()
+
+        if result.get("code") == 0:
+            return result["data"]
+        else:
+            raise Exception(f"删除字段失败: {result.get('msg')}")
+
+    async def delete_bitable_record(
+        self,
+        app_token: str,
+        table_id: str,
+        record_id: str
+    ) -> Dict:
+        """删除多维表格记录"""
+        url = f"{self.base_url}/bitable/v1/apps/{app_token}/tables/{table_id}/records/{record_id}"
+        headers = await self._get_headers()
+
+        response = await self.client.delete(url, headers=headers)
+        result = response.json()
+
+        if result.get("code") == 0:
+            return result["data"]
+        else:
+            raise Exception(f"删除记录失败: {result.get('msg')}")
+
     # ==================== Drive模块 ====================
 
     async def create_folder(self, name: str, parent_token: Optional[str] = None) -> Dict:

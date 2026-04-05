@@ -148,19 +148,16 @@ class WikiBuilder:
 
         await self.init_space()
         await self.build_year_nodes()
-        await self.build_course_nodes()
+
+        # 注：不再创建课程文档节点，课程文档作为独立文档通过表格链接访问
 
         print(f"\n✅ 知识库构建完成!")
         print(f"   空间ID: {self.space_id}")
         print(f"   学年节点: {len(self.year_node_map)}")
-        print(f"   课程节点: {len(self.node_map)}")
 
         result = {
             "space_id": self.space_id,
             "year_nodes": self.year_node_map,
-            "course_nodes": {
-                f"{k[0]}-{k[1]}": v for k, v in self.node_map.items()
-            }
         }
 
         # 保存到本地

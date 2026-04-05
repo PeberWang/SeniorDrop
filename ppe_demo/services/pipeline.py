@@ -30,17 +30,21 @@ async def run_full_pipeline():
     feishu = FeishuService()
 
     try:
-        # ── Step 1: 构建知识库 ──
+        # ── Step 1: 构建知识库（仅空间+学年节点） ──
         print("\n📚 Step 1: 构建知识库结构")
         print("-" * 40)
         wiki = WikiBuilder(feishu)
-        await wiki.build_all()
+        await wiki.init_space()
+        await wiki.build_year_nodes()
 
-        # ── Step 2: 创建多维表格 ──
+        # ── Step 2: 创建多维表格（直接在知识库节点下） ──
         print("\n📊 Step 2: 创建学年多维表格")
         print("-" * 40)
         table_svc = TableService(feishu)
-        await table_svc.create_all_tables()
+        await table_svc.create_all_tables(
+            space_id=wiki.space_id,
+            year_node_map=wiki.year_node_map
+        )
 
         # ── Step 3: 填充课程记录 ──
         print("\n📝 Step 3: 填充课程记录")

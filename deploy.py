@@ -46,7 +46,9 @@ async def deploy_tables(feishu: FeishuService, wiki: WikiBuilder = None) -> dict
     print("=" * 60)
 
     table_svc = TableService(feishu)
-    result = await table_svc.create_all_tables()
+    space_id = wiki.space_id if wiki else None
+    year_node_map = wiki.year_node_map if wiki else None
+    result = await table_svc.create_all_tables(space_id=space_id, year_node_map=year_node_map)
 
     # 填充课程记录
     print("\n" + "=" * 60)
@@ -109,9 +111,6 @@ async def deploy_full():
         wiki = WikiBuilder(feishu)
         wiki.space_id = wiki_result["space_id"]
         wiki.year_node_map = wiki_result["year_nodes"]
-        for key, value in wiki_result["course_nodes"].items():
-            year, course = key.split("-", 1)
-            wiki.node_map[(year, course)] = value
 
         # 2. 创建多维表格
         await deploy_tables(feishu, wiki)
@@ -131,7 +130,6 @@ async def deploy_full():
         print("\n📋 部署结果:")
         print(f"  - 知识空间ID: {wiki.space_id}")
         print(f"  - 学年节点: {len(wiki.year_node_map)}")
-        print(f"  - 课程节点: {len(wiki.node_map)}")
         print(f"\n🌐 访问链接:")
         print(f"  - 知识库: https://nkuyouth.feishu.cn/wiki/space/{wiki.space_id}")
 
