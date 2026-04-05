@@ -139,8 +139,7 @@ class DocGenerator:
         with open(mapping_path, 'w', encoding='utf-8') as f:
             json.dump(mapping, f, ensure_ascii=False, indent=2)
 
-    def _format_material_list(self, materials: List[dict]) -> dict:
-        """格式化资料列表（按类型分组）"""
+    def _build_document_blocks(
         self,
         course_name: str,
         teacher: str,

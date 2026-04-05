@@ -83,8 +83,8 @@
 ### 5.1 理想的 `deploy.py --mode full` 流程
 1. 查找/复用知识空间 → ✅
 2. 创建学年节点（仅目录） → ✅（保留）
-3. 在每个学年节点下创建多维表格（`obj_type: "bitable"`） → 待实现
-4. 设置表格字段，删除默认冗余字段 → 待实现
+3. 在每个学年节点下创建多维表格（`obj_type: "bitable"`） → ✅ 已实现（`TableService._create_year_table` 支持 `parent_node_token` 参数）
+4. 设置表格字段，删除默认冗余字段 → ✅ 已实现（`TableService._clean_default_fields` 自动删除非自定义默认字段）
 5. 填充课程记录 → ✅
 6. 为每门课程创建独立文档并写入内容 → ✅（但不在知识库树中显示）
 7. 关联学习指南链接 → ✅
