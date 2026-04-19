@@ -11,6 +11,11 @@ PPE云端智能大礼包 - 统一部署入口
     python deploy.py --mode upload        # 仅上传资料
     python deploy.py --mode link          # 仅关联表格与文档链接
     python deploy.py --mode cleanup      # 清理空记录、冗余字段、空节点
+    python deploy.py --mode sync          # 增量同步课程记录（不覆盖用户修改）
+
+    环境变量：
+        MATERIALS_BASE           资料包路径（绝对或相对于项目根目录）
+        COURSE_REFORM_NOTES_DIR  课程教改笔记路径
 """
 
 import sys
@@ -40,10 +45,17 @@ async def deploy_wiki(feishu: FeishuService) -> dict:
     return result
 
 
-async def deploy_tables(feishu: FeishuService, wiki: WikiBuilder = None) -> dict:
-    """部署多维表格"""
-    print("\n" + "=" * 60)
-    print("   📊 步骤2: 创建多维表格")
+async def deploy_tables(feishu: FeishuService, wiki: WikiBuilder = None, incremental: bool = True) -> dict:
+    """部署多维表格
+
+    Args:
+        feishu: 飞书服务实例
+        wiki: 知识库构建器（可选）
+        incremental: 是否增量更新（默认True）
+    """
+    mode_str = "增量更新" if incremental else "全量覆盖"
+    print(f"\n{'=' * 60}")
+    print(f"   📊 步骤2: 创建多维表格（{mode_str}）")
     print("=" * 60)
 
     table_svc = TableService(feishu)
@@ -52,10 +64,10 @@ async def deploy_tables(feishu: FeishuService, wiki: WikiBuilder = None) -> dict
     result = await table_svc.create_all_tables(space_id=space_id, year_node_map=year_node_map)
 
     # 填充课程记录
-    print("\n" + "=" * 60)
-    print("   📝 步骤3: 填充课程记录")
+    print(f"\n{'=' * 60}")
+    print(f"   📝 步骤3: 填充课程记录（{mode_str}）")
     print("=" * 60)
-    await table_svc.populate_all_tables(wiki_builder=wiki)
+    await table_svc.populate_all_tables(wiki_builder=wiki, incremental=incremental)
 
     return result
 
@@ -96,6 +108,29 @@ async def deploy_link(feishu: FeishuService, wiki: WikiBuilder) -> int:
     link_svc = LinkService(feishu, wiki)
     success_count = await link_svc.link_all_courses()
     return success_count
+
+
+async def deploy_sync():
+    """增量同步课程记录（不覆盖用户手动修改的字段）"""
+    print("=" * 60)
+    print("   🔄 PPE云端智能大礼包 - 增量同步")
+    print("=" * 60)
+
+    feishu = FeishuService()
+
+    try:
+        # 加载已有的 wiki 结构
+        wiki = WikiBuilder(feishu)
+        wiki_loaded = wiki.load_from_local()
+
+        table_svc = TableService(feishu)
+        await table_svc.populate_all_tables(
+            wiki_builder=wiki if wiki_loaded else None,
+            incremental=True
+        )
+
+    finally:
+        await feishu.close()
 
 
 async def deploy_cleanup():
@@ -293,6 +328,9 @@ async def deploy_mode(mode: str):
         elif mode == "cleanup":
             await deploy_cleanup()
 
+        elif mode == "sync":
+            await deploy_sync()
+
     finally:
         await feishu.close()
 
@@ -312,7 +350,7 @@ def main():
 
     parser.add_argument(
         "--mode",
-        choices=["full", "wiki", "tables", "docs", "upload", "link", "cleanup"],
+        choices=["full", "wiki", "tables", "docs", "upload", "link", "cleanup", "sync"],
         default="full",
         help="部署模式"
     )

@@ -2,37 +2,83 @@
 """
 PPE云端智能大礼包 - 配置文件
 所有敏感信息通过环境变量或 .env 文件读取
+
+路径解析优先级：
+  1. 环境变量（MATERIALS_BASE / COURSE_REFORM_NOTES_DIR）
+  2. .env 文件中的值
+  3. 自动检测：先尝试绝对路径，再尝试相对于项目根目录的路径
 """
 
 import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# 加载 .env 文件（从项目根目录）
-_env_path = Path(__file__).parent.parent / ".env"
-if _env_path.exists():
-    load_dotenv(_env_path)
-    # print(f"[OK] 已加载环境变量: {_env_path}")
-# else:
-    # print(f"[WARN] 未找到 .env 文件: {_env_path}")
-
-# 基础路径
+# ── 路径常量 ──
 BASE_DIR = Path(__file__).parent
+PROJECT_ROOT = BASE_DIR.parent  # PPE-CloudSmart-GiftBox/
 DATA_DIR = BASE_DIR / "data"
 OUTPUT_DIR = BASE_DIR / "output"
 TEMPLATES_DIR = BASE_DIR / "templates"
 
-# 原始材料包路径（本地资料存放目录）
-MATERIALS_BASE = Path(os.getenv(
-    "MATERIALS_BASE",
-    r"D:\c盘转移\Desktop\Claw工作文件夹\灵感实施附件\PPE云端智能大礼包\PPE大二上资料包"
-))
+# 加载 .env 文件（从项目根目录）
+_env_path = PROJECT_ROOT / ".env"
+if _env_path.exists():
+    load_dotenv(_env_path)
 
-# 课程教改笔记路径（不在仓库中，保留本地引用）
-COURSE_REFORM_NOTES_DIR = Path(os.getenv(
-    "COURSE_REFORM_NOTES_DIR",
-    r"D:\c盘转移\Desktop\Claw工作文件夹\灵感实施附件\PPE云端智能大礼包\PPE课程教改笔记"
-))
+
+def _resolve_path(env_key: str, absolute_default: str, relative_default: str) -> Path:
+    """解析路径，支持绝对路径和相对路径
+
+    优先级：
+      1. 环境变量（已由 load_dotenv 加载 .env）
+      2. 绝对路径默认值
+      3. 相对于项目根目录的路径
+
+    Args:
+        env_key: 环境变量名
+        absolute_default: 绝对路径默认值
+        relative_default: 相对于项目根目录的默认路径
+
+    Returns:
+        解析后的 Path 对象
+    """
+    env_val = os.getenv(env_key, "").strip()
+
+    if env_val:
+        p = Path(env_val)
+        # 如果是绝对路径，直接使用
+        if p.is_absolute():
+            return p
+        # 如果是相对路径，相对于项目根目录解析
+        return (PROJECT_ROOT / p).resolve()
+
+    # 尝试绝对路径默认值
+    abs_path = Path(absolute_default)
+    if abs_path.exists():
+        return abs_path
+
+    # 尝试相对于项目根目录的路径
+    rel_path = PROJECT_ROOT / relative_default
+    if rel_path.exists():
+        return rel_path.resolve()
+
+    # 都不存在时返回绝对路径默认值（保持向后兼容，运行时会报错提醒用户）
+    return abs_path
+
+
+# 原始材料包路径
+MATERIALS_BASE = _resolve_path(
+    env_key="MATERIALS_BASE",
+    absolute_default=r"D:\c盘转移\Desktop\Claw工作文件夹\灵感实施附件\PPE云端智能大礼包\PPE大二上资料包",
+    relative_default="materials",  # 项目根目录下的 materials/ 文件夹
+)
+
+# 课程教改笔记路径
+COURSE_REFORM_NOTES_DIR = _resolve_path(
+    env_key="COURSE_REFORM_NOTES_DIR",
+    absolute_default=r"D:\c盘转移\Desktop\Claw工作文件夹\灵感实施附件\PPE云端智能大礼包\PPE课程教改笔记",
+    relative_default="course_reform_notes",  # 项目根目录下的 course_reform_notes/ 文件夹
+)
 
 # 智谱AI配置
 ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY", "")
@@ -59,8 +105,7 @@ MATERIAL_TYPES = [
 # 年级
 GRADES = ["22级", "23级", "24级"]
 
-# PPE课程按学年分类（基于现有课程数据扩展）
-# 每门课包含：name(课程名), teacher(授课老师), semester(开课学期), type(必修/选修), exam(考试形式)
+# PPE课程按学年分类
 COURSES_BY_YEAR = {
     "大一": [
         {"name": "伦理学导论", "teacher": "李虎老师", "semester": "大一上", "type": "必修", "exam": "闭卷"},
@@ -106,6 +151,9 @@ BITABLE_COURSE_FIELDS = [
     ("贡献者", 1),
     ("最后更新", 5),
 ]
+
+# ── 保护字段：增量更新时不覆盖这些用户手动编辑的字段 ──
+PROTECTED_FIELDS = {"贡献者", "最后更新"}
 
 # 确保目录存在
 DATA_DIR.mkdir(exist_ok=True)
