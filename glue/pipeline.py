@@ -13,7 +13,6 @@ from libs.feishu import blocks as B
 from libs.data_adapter import read_json, write_json
 from libs.operation_log import log_operation
 from services.wiki_service import WikiService
-from services.table_service import TableService
 from services.doc_service import DocService
 from services.material_service import MaterialService
 from services.perm_service import PermService
@@ -26,15 +25,14 @@ logger = structlog.get_logger()
 _STATE_FILE = "data/deploy_state.json"
 
 
-def _year_placeholder_blocks(year: str, course_count: int) -> List:
-    """学年文档占位结构（WP5 将补充 LLM 总论内容）。"""
+def _year_content_blocks(year: str, courses: list) -> List:
+    """学年文档内容：标题 + 简介 + 原生课程导航表（学习指南链接待 link 步骤回填）。"""
     return [
         B.heading(f"{year}学年课程学习指南", 1),
-        B.text(f"本文档汇集了 {year} 各门课程的学习资料与学长学姐的高分心得，共 {course_count} 门课程。"),
-        B.text("课程导航见下方表格：点击任一行，即可进入对应课程的专属学习指南。"),
+        B.text(f"本文档汇集了 {year} 各门课程的学习资料与学长学姐的高分心得，共 {len(courses)} 门课程。"),
         B.divider(),
         B.heading("课程导航", 2),
-        B.text("（下表由部署脚本自动生成，学习指南链接将在文档生成步骤后自动填入）"),
+        B.nav_table(courses),
     ]
 
 
@@ -52,7 +50,6 @@ class Pipeline:
         logger.info("开始知识库构建流程")
         feishu = FeishuAdapter(self.settings)
         wiki = WikiService(feishu)
-        table = TableService(feishu)
         app_token = self.settings.bitable_app_token
 
         try:
@@ -67,7 +64,7 @@ class Pipeline:
                     space_id = result["space_id"]
                     self.rollback_manager.record_wiki_space(space_id, sn)
 
-            # 2. 学年节点 → 内容 → nav 表 → 嵌套 bitable
+            # 2. 学年节点 → 原生表格内容（无需 bitable）
             year_data: Dict[str, Any] = {}
             for year in WIKI_YEAR_NODES:
                 courses = get_courses_by_year(year)
@@ -77,24 +74,18 @@ class Pipeline:
                 node = await wiki.build_year_nodes(space_id, [year])
                 node_info = node[year]
                 obj_token = node_info["obj_token"]
-                year_data[year] = {**node_info, "table_id": ""}
+                year_data[year] = {**node_info}
                 self.rollback_manager.record_wiki_node(node_info["node_id"], year, space_id)
 
-                # 占位块写入学年文档
                 if obj_token:
-                    placeholder = _year_placeholder_blocks(year, len(courses))
-                    next_idx = await feishu.append_blocks(obj_token, placeholder, index=0)
-
-                # 建 nav 表 + 填课程行
-                if app_token and obj_token:
-                    tbl_result = await table.populate_year_courses(app_token, year, courses)
-                    table_id = tbl_result["table_id"]
-                    year_data[year]["table_id"] = table_id
-                    # 在学年 wiki 节点下挂载 bitable 子节点（侧栏可见）
-                    await wiki.attach_bitable_to_year(
-                        space_id, node_info["node_id"], year, app_token, table_id
-                    )
-                    logger.info("多维表格挂载完成", year=year, table_id=table_id)
+                    blocks = _year_content_blocks(year, courses)
+                    # 分离普通块和表格块（表格通过 descendant API 创建）
+                    regular = [b for b in blocks if b.block_type != 31]
+                    tables = [b for b in blocks if b.block_type == 31]
+                    idx = await feishu.append_blocks(obj_token, regular, index=0)
+                    for tb in tables:
+                        idx = await feishu.create_descendant(obj_token, tb, index=idx)
+                    logger.info("学年文档内容写入完成", year=year, blocks=len(regular), tables=len(tables))
 
             # 3. 保存部署状态（供 doc 步骤使用）
             state = {"space_id": space_id, "app_token": app_token or "", "year_nodes": year_data}
@@ -113,30 +104,32 @@ class Pipeline:
 
     @log_operation("table_pipeline")
     async def table_pipeline(self, app_token: str, year: str, courses: list) -> Dict[str, Any]:
-        logger.info("开始多维表格构建流程", year=year)
+        """重建学年文档中的原生课程导航表（替代旧的 bitable 建表+挂载）。"""
+        logger.info("开始课程导航表构建", year=year)
         feishu = FeishuAdapter(self.settings)
-        table = TableService(feishu)
-        wiki = WikiService(feishu)
-        if not app_token:
-            await feishu.close()
-            return {"status": "skipped", "reason": "未配置 App Token"}
-        result = await table.populate_year_courses(app_token, year, courses)
-
-        # 挂载 bitable 到 wiki 学年节点（从 deploy_state 读取 space_id 和 node_id）
         state = read_json(_STATE_FILE) or {}
-        space_id = state.get("space_id")
-        year_node = (state.get("year_nodes") or {}).get(year, {})
-        year_node_id = year_node.get("node_id")
-        table_id = result.get("table_id")
-        if space_id and year_node_id and table_id:
-            try:
-                await wiki.attach_bitable_to_year(space_id, year_node_id, year, app_token, table_id)
-                logger.info("多维表格已挂载到 Wiki 节点", year=year, table_id=table_id)
-            except Exception as e:
-                logger.warning("多维表格挂载失败", year=year, error=str(e))
+        year_nodes = state.get("year_nodes", {})
+        obj_token = (year_nodes.get(year) or {}).get("obj_token")
+        if not obj_token:
+            await feishu.close()
+            return {"status": "skipped", "reason": "学年文档不存在，请先运行 --mode wiki"}
+        try:
+            # 定位并删除旧导航表
+            top_blocks = await feishu.list_top_blocks(obj_token)
+            table_idx = None
+            for i, blk in enumerate(top_blocks):
+                if blk["block_type"] == 31:
+                    table_idx = i
+                    break
+            if table_idx is not None:
+                await feishu.delete_blocks(obj_token, table_idx, table_idx + 1)
 
-        await feishu.close()
-        return {"year": year, "result": result}
+            new_table = B.nav_table(courses)
+            await feishu.create_descendant(obj_token, new_table, index=table_idx or 1)
+            logger.info("原生课程导航表已重建", year=year, courses=len(courses))
+            return {"year": year, "courses": len(courses), "status": "ok"}
+        finally:
+            await feishu.close()
 
     # ── 课程文档生成流程（WP5 实现）─────────────────────────────────────────
 
@@ -177,15 +170,16 @@ class Pipeline:
     @log_operation("material_pipeline")
     async def material_pipeline(self, app_token: str = None) -> Dict[str, Any]:
         import os
+        from libs.cloud import get_drive
         config_path = "data/materials.json"
         if not os.path.exists(config_path):
             return {"status": "skipped", "reason": "data/materials.json 不存在"}
         feishu = FeishuAdapter(self.settings)
-        material = MaterialService(feishu)
+        cloud = get_drive(self.settings)
+        material = MaterialService(feishu, cloud=cloud, settings=self.settings)
         try:
             result = await material.upload_materials_from_config(config_path)
-            if app_token and result.get("total_success", 0) > 0:
-                result["link_result"] = await material.link_materials_to_tables(app_token)
+            result["material_manifests"] = material.get_material_manifests()
             return result
         finally:
             await feishu.close()
@@ -204,31 +198,51 @@ class Pipeline:
     # ── 文档链接回填流程 ─────────────────────────────────────────────────────
 
     @log_operation("link_pipeline")
-    async def link_pipeline(self, app_token: str, course_to_doc_map: Dict[str, str]) -> Dict[str, Any]:
+    async def link_pipeline(self, course_to_doc_map: Dict[str, str]) -> Dict[str, Any]:
+        """回填文档链接到学年导航表：GET 定位旧表 → DELETE 删除 → POST 新表含链接。
+
+        替代原逐行 bitable search+update 模式，每学年仅 3 次 API 调用。
+        """
         if not course_to_doc_map:
             return {"status": "skipped", "reason": "未提供文档映射"}
         feishu = FeishuAdapter(self.settings)
-        table = TableService(feishu)
+        state = read_json(_STATE_FILE) or {}
         results, errors = [], []
         try:
             for year in WIKI_YEAR_NODES:
-                try:
-                    table_id = await table._resolve_table_id(app_token, year)
-                    table.table_map[year] = table_id
-                except Exception:
+                year_nodes = state.get("year_nodes", {})
+                obj_token = (year_nodes.get(year) or {}).get("obj_token")
+                if not obj_token:
                     continue
-                for course in get_courses_by_year(year):
-                    doc_url = course_to_doc_map.get(course.name)
-                    if not doc_url:
-                        continue
-                    try:
-                        r = await table.backfill_doc_url(app_token, year, course.name, doc_url)
-                        results.append({"year": year, "course": course.name, **r})
-                    except Exception as e:
-                        errors.append({"year": year, "course": course.name, "error": str(e)})
+
+                # 1. 列出顶层块，定位导航表（block_type=31）
+                top_blocks = await feishu.list_top_blocks(obj_token)
+                table_idx = None
+                for i, blk in enumerate(top_blocks):
+                    if blk["block_type"] == 31:
+                        table_idx = i
+                        break
+
+                if table_idx is None:
+                    logger.warning("未找到学年文档中的导航表", year=year)
+                    continue
+
+                # 2. 构建含链接的新导航表
+                courses = get_courses_by_year(year)
+                for c in courses:
+                    if c.name in course_to_doc_map:
+                        c.doc_url = course_to_doc_map[c.name]
+                new_table = B.nav_table(courses)
+
+                # 3. DELETE 旧表 → POST 新表
+                await feishu.delete_blocks(obj_token, table_idx, table_idx + 1)
+                await feishu.create_descendant(obj_token, new_table, index=table_idx)
+                results.append({"year": year, "updated": len(courses)})
+                logger.info("导航表链接回填完成", year=year, courses=len(courses))
         finally:
             await feishu.close()
-        return {"success_count": len(results), "error_count": len(errors), "results": results, "errors": errors}
+        return {"success_count": len(results), "error_count": len(errors),
+                "results": results, "errors": errors}
 
     # ── 表单同步流程 ─────────────────────────────────────────────────────────
 

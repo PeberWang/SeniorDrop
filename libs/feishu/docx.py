@@ -49,7 +49,12 @@ class DocxMixin:
 
     async def embed_bitable(self, doc_id: str, app_token: str, table_id: str,
                             index: int = 0, view_type: int = 1) -> Dict[str, Any]:
-        """在文档 index 处内嵌已存在的多维表格（block_type=18）。"""
+        """[已废弃] 在文档中内嵌多维表格（block_type=18）。
+
+        block_type=18 在所有参数组合下均失败（错误码 1770001）。
+        请使用 DocxTableMixin.create_descendant() + blocks.table() 原生表格替代。
+        此方法保留作为 fallback 参考。
+        """
         block = bitable_embed(app_token, table_id, view_type)
         body = (CreateDocumentBlockChildrenRequestBody.builder()
                 .children([block]).index(index).build())

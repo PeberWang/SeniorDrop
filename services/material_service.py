@@ -10,47 +10,70 @@ import json
 from typing import Dict, List, Optional, Any
 
 from libs.feishu import FeishuAdapter
-from config.settings import Settings
+from libs.cloud.base import CloudDriveAdapter
+from libs.storage_path import raw_material_key
 
 logger = structlog.get_logger()
 
 
 class MaterialService:
-    """资料上传服务"""
+    """资料上传服务 — 支持 OSS（推荐）和飞书 Drive（向后兼容）两种上传后端。"""
 
-    def __init__(self, feishu: FeishuAdapter):
-        """初始化服务"""
+    def __init__(self, feishu: FeishuAdapter,
+                 cloud: CloudDriveAdapter = None,
+                 settings=None):
         self.feishu = feishu
-        self.uploaded_files = {}  # 存储上传记录
+        self.cloud = cloud
+        self.settings = settings
+        self.uploaded_files: Dict[str, Dict] = {}
+        self._material_manifests: Dict[str, List[Dict]] = {}
 
-    async def upload_file(self, file_path: str, course_name: str, custom_name: Optional[str] = None) -> Dict[str, str]:
-        """上传单个文件"""
+    async def upload_file(self, file_path: str, course_name: str = "",
+                          material_type: str = "", contributor: str = "",
+                          custom_name: Optional[str] = None) -> Dict[str, str]:
+        """上传单个文件到云盘（OSS 优先，回退飞书 Drive）。"""
         try:
-            # 验证文件
             if not os.path.exists(file_path):
                 raise FileNotFoundError(f"文件不存在: {file_path}")
 
-            # 获取文件名
             file_name = custom_name or os.path.basename(file_path)
-            # 注释掉按课程分类，避免飞书文件夹不存在的问题
-            # if course_name:
-            #     file_name = f"{course_name}/{file_name}"
 
-            logger.info("上传文件", file_path=file_path, file_name=file_name)
+            if self.cloud:
+                # OSS 路径上传
+                oss_key = raw_material_key(course_name or "general", file_name)
+                await self.cloud.upload(file_path, oss_key)
+                download_url = await self.cloud.download_url(oss_key)
+                result = {"file_key": oss_key, "url": download_url, "backend": "oss"}
+                logger.info("文件上传到 OSS", file_path=file_path, oss_key=oss_key)
+            else:
+                # 回退：飞书 Drive 上传
+                logger.info("上传文件到飞书 Drive", file_path=file_path, file_name=file_name)
+                result = await self.feishu.upload_file(file_path, file_name)
+                result["backend"] = "feishu"
 
-            # 上传文件
-            upload_result = await self.feishu.upload_file(file_path, file_name)
-
-            # 记录上传信息
-            file_key = upload_result["file_key"]
+            file_key = result["file_key"]
             self.uploaded_files[file_key] = {
                 "file_path": file_path,
                 "course_name": course_name,
-                "url": upload_result["url"]
+                "material_type": material_type,
+                "contributor": contributor,
+                "url": result["url"],
+                "backend": result.get("backend", "feishu"),
             }
 
+            # 累积按课程分组的资料清单（供 DocService 使用）
+            if course_name:
+                if course_name not in self._material_manifests:
+                    self._material_manifests[course_name] = []
+                self._material_manifests[course_name].append({
+                    "name": custom_name or os.path.basename(file_path),
+                    "material_type": material_type,
+                    "contributor": contributor,
+                    "file_link": result["url"],
+                })
+
             logger.info("文件上传成功", file_path=file_path, file_key=file_key)
-            return upload_result
+            return result
 
         except Exception as e:
             logger.error("文件上传失败", file_path=file_path, error=str(e))
@@ -60,56 +83,44 @@ class MaterialService:
         self,
         course_name: str,
         file_paths: List[str],
-        course_dir: Optional[str] = None
+        course_dir: Optional[str] = None,
+        material_meta: List[Dict] = None,
     ) -> Dict[str, Any]:
-        """批量上传课程文件"""
+        """批量上传课程文件。material_meta 可为每个文件提供 {name, type, contributor}。"""
         results = []
         errors = []
+        meta_list = material_meta or []
 
-        # 如果指定了课程目录，上传该目录下的所有文件
         if course_dir and os.path.isdir(course_dir):
             logger.info("上传课程目录下的所有文件", course_name=course_name, course_dir=course_dir)
-
-            # 遍历目录，递归查找文件
             for root, dirs, files in os.walk(course_dir):
                 for file in files:
                     file_path = os.path.join(root, file)
                     relative_path = os.path.relpath(file_path, course_dir)
-
                     try:
-                        upload_result = await self.upload_file(file_path, course_name)
-                        results.append({
-                            "file_path": file_path,
-                            "relative_path": relative_path,
-                            **upload_result
-                        })
+                        result = await self.upload_file(file_path, course_name)
+                        results.append({"file_path": file_path, "relative_path": relative_path, **result})
                     except Exception as e:
-                        errors.append({
-                            "file_path": file_path,
-                            "error": str(e)
-                        })
+                        errors.append({"file_path": file_path, "error": str(e)})
 
-        # 上传指定的文件列表
-        for file_path in file_paths:
+        for i, file_path in enumerate(file_paths):
             try:
-                upload_result = await self.upload_file(file_path, course_name)
-                results.append({
-                    "file_path": file_path,
-                    **upload_result
-                })
+                meta = meta_list[i] if i < len(meta_list) else {}
+                result = await self.upload_file(
+                    file_path, course_name,
+                    material_type=meta.get("type", ""),
+                    contributor=meta.get("contributor", ""),
+                    custom_name=meta.get("name"),
+                )
+                results.append({"file_path": file_path, **result})
             except Exception as e:
-                errors.append({
-                    "file_path": file_path,
-                    "error": str(e)
-                })
+                errors.append({"file_path": file_path, "error": str(e)})
 
         return {
             "course_name": course_name,
             "total_files": len(file_paths) + (len(os.listdir(course_dir)) if course_dir else 0),
-            "success_count": len(results),
-            "error_count": len(errors),
-            "results": results,
-            "errors": errors
+            "success_count": len(results), "error_count": len(errors),
+            "results": results, "errors": errors,
         }
 
     async def upload_materials_from_config(self, config_path: str) -> Dict[str, Any]:
@@ -148,7 +159,9 @@ class MaterialService:
                     total_file_count += len(file_paths)
 
                     if file_paths:
-                        result = await self.upload_course_files(course_name, file_paths)
+                        result = await self.upload_course_files(
+                            course_name, file_paths, material_meta=materials
+                        )
                         all_results.append(result)
 
                         # 为每个资料添加原始配置信息
@@ -301,3 +314,10 @@ class MaterialService:
     def get_course_files(self, course_name: str) -> List[Dict]:
         """获取指定课程的所有上传文件"""
         return [info for info in self.uploaded_files.values() if info["course_name"] == course_name]
+
+    def get_material_manifests(self) -> Dict[str, List[Dict]]:
+        """获取按课程分组的资料清单 {course_name: [{name, material_type, contributor, file_link}, ...]}。
+
+        供 DocService 在构建课程文档的数据表格时使用。
+        """
+        return dict(self._material_manifests)

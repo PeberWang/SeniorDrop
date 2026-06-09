@@ -10,12 +10,13 @@ import structlog
 from config.settings import Settings
 from libs.feishu.wiki import WikiMixin
 from libs.feishu.docx import DocxMixin
+from libs.feishu.docx_table import DocxTableMixin
 from libs.feishu.drive import DriveMixin
 from libs.feishu.bitable import BitableMixin
 from libs.feishu.perm import PermMixin
 
 
-class FeishuAdapter(WikiMixin, DocxMixin, DriveMixin, BitableMixin, PermMixin):
+class FeishuAdapter(WikiMixin, DocxMixin, DocxTableMixin, DriveMixin, BitableMixin, PermMixin):
     """飞书API适配器 - 基于 lark-oapi 1.6.5"""
 
     def __init__(self, settings: Settings):

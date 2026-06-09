@@ -124,19 +124,22 @@ async def _deploy_docs(settings: Settings, limit: int = None) -> Dict[str, Any]:
 async def _deploy_materials(settings: Settings) -> Dict[str, Any]:
     logger.info("开始部署资料")
     import os
+    from libs.cloud import get_drive
     feishu = FeishuAdapter(settings)
-    material_service = MaterialService(feishu)
+    cloud = get_drive(settings)
+    material_service = MaterialService(feishu, cloud=cloud, settings=settings)
     materials_path = os.path.join("data", "materials.json")
     if not os.path.exists(materials_path):
         return {"status": "error", "message": "资料配置文件不存在"}
-    return await material_service.upload_materials_from_config(materials_path)
+    result = await material_service.upload_materials_from_config(materials_path)
+    result["material_manifests"] = material_service.get_material_manifests()
+    return result
 
 
 async def _deploy_links(settings: Settings, course_to_doc_map: Dict[str, str] = None) -> Dict[str, Any]:
     logger.info("开始关联表格与文档")
-    app_token = await _resolve_app_token(settings)
     pipeline = Pipeline(settings)
-    return await pipeline.link_pipeline(app_token=app_token, course_to_doc_map=course_to_doc_map)
+    return await pipeline.link_pipeline(course_to_doc_map=course_to_doc_map)
 
 
 async def _deploy_sync(settings: Settings) -> Dict[str, Any]:

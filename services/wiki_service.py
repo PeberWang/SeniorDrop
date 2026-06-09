@@ -45,7 +45,11 @@ class WikiService:
 
     async def attach_bitable_to_year(self, space_id: str, year_node_id: str,
                                       year: str, bitable_token: str, table_id: str) -> Dict:
-        """在学年节点下挂载 bitable 子节点（wiki 侧栏可见）。"""
+        """[已废弃] 在学年 wiki 节点下挂载 bitable shortcut 子节点。
+
+        导航表已迁移到 docx 原生表格（block_type=31），不再需要此方法。
+        保留作为 fallback。bitable 仍用于表单收集（sync-form）。
+        """
         title = f"{year}课程导航"
         result = await self.feishu.create_wiki_bitable_node(
             space_id=space_id,

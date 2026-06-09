@@ -40,18 +40,22 @@ def _course_doc_blocks(course: CourseData, sections: Dict[str, str]) -> List:
     bk.append(B.heading("老师教学风格与偏好", 2))
     bk.append(B.text(sections.get("teacher_pref") or "（待同学补充）"))
 
-    # Section 4: 推荐资料（含 OSS 下载链接）
+    # Section 4: 推荐资料（原生表格，含 OSS/飞书下载链接）
     bk.append(B.heading("推荐资料", 2))
     if course.materials:
+        material_headers = ["资料名称", "类型", "贡献者", "推荐理由", "下载"]
+        material_rows = []
         for m in course.materials:
-            label = f"【{m.material_type or '资料'}】{m.name}"
-            if m.contributor:
-                label += f"（贡献：{m.contributor}）"
-            if m.recommendation_reason:
-                label += f" — {m.recommendation_reason}"
-            bk.append(B.bullet(label))
-            if m.file_link:
-                bk.append(B.text(f"下载：{m.file_link}"))
+            link_text = m.file_link if m.file_link else "（暂无）"
+            material_rows.append([
+                m.name,
+                m.material_type or "资料",
+                m.contributor or "",
+                m.recommendation_reason or "",
+                link_text,
+            ])
+        bk.append(B.table(material_headers, material_rows, header_row=True,
+                         column_widths=[200, 80, 100, 250, 250]))
     else:
         bk.append(B.text("（暂无收录资料）"))
 
@@ -59,11 +63,13 @@ def _course_doc_blocks(course: CourseData, sections: Dict[str, str]) -> List:
     bk.append(B.heading("学长学姐感悟", 2))
     bk.append(B.text(sections.get("reflections_synthesis") or "（暂无感悟，欢迎分享你对这门课的理解）"))
 
-    # Section 6: 贡献者
+    # Section 6: 贡献者（原生表格）
     bk.append(B.heading("贡献者", 2))
     if course.contributors:
-        for c in course.contributors:
-            bk.append(B.bullet(f"{c.name}：{c.contribution or '资料与心得贡献'}"))
+        contr_headers = ["贡献者", "贡献内容"]
+        contr_rows = [[c.name, c.contribution or "资料与心得贡献"] for c in course.contributors]
+        bk.append(B.table(contr_headers, contr_rows, header_row=True,
+                         column_widths=[150, 650]))
     else:
         bk.append(B.text("（本文档由 PPE 大礼包自动生成）"))
 
@@ -104,8 +110,15 @@ class DocService:
             sections = {}
 
         blocks = _course_doc_blocks(course, sections)
-        await self.feishu.append_blocks(doc_id, blocks, index=0)
-        logger.info("课程文档写入完成", course=course.name, doc_id=doc_id)
+        # 分离普通块（text/heading/divider）和表格块（block_type=31）
+        # 表格必须通过 descendant API 创建，children API 不支持嵌套结构
+        regular = [b for b in blocks if b.block_type != 31]
+        table_blocks = [b for b in blocks if b.block_type == 31]
+        idx = await self.feishu.append_blocks(doc_id, regular, index=0)
+        for tb in table_blocks:
+            idx = await self.feishu.create_descendant(doc_id, tb, index=idx)
+        logger.info("课程文档写入完成", course=course.name, doc_id=doc_id,
+                    blocks=len(regular), tables=len(table_blocks))
         return doc_url
 
     async def append_year_overview(self, obj_token: str, year: str, courses: List[CourseData]) -> None:

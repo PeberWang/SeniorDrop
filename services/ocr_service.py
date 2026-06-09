@@ -9,6 +9,7 @@ from typing import Dict, Any
 from libs.feishu import FeishuAdapter
 from libs.llm_adapter import LLMAdapter
 from libs.cloud.base import CloudDriveAdapter
+from libs.storage_path import raw_material_key, ocr_text_key, summary_key
 from libs import ocr_adapter
 from config.settings import Settings
 
@@ -30,7 +31,8 @@ class OcrService:
         if not self.settings.glm_api_key:
             return {"status": "skipped", "reason": "未配置 GLM_API_KEY", "file": file_path}
 
-        source_key = await self.cloud.upload(file_path, f"{material_name}.pdf")
+        source_key = await self.cloud.upload(
+            file_path, raw_material_key("", f"{material_name}.pdf"))
         logger.info("源文件已存入云盘", name=material_name, key=source_key)
 
         full_text = await ocr_adapter.run_ocr(
@@ -38,14 +40,14 @@ class OcrService:
         )
 
         self.settings.cloud_stub_dir.mkdir(parents=True, exist_ok=True)
-        ocr_local = self.settings.cloud_stub_dir / f"{material_name}_ocr.md"
+        ocr_local = self.settings.cloud_stub_dir / ocr_text_key(material_name)
         ocr_local.write_text(full_text, encoding="utf-8")
-        ocr_key = await self.cloud.upload(str(ocr_local), f"{material_name}_ocr.md")
+        ocr_key = await self.cloud.upload(str(ocr_local), ocr_text_key(material_name))
 
         summary_text = await self.llm.summarize(full_text, title=material_name)
 
         self.settings.summary_dir.mkdir(parents=True, exist_ok=True)
-        summary_path = self.settings.summary_dir / f"{material_name}.md"
+        summary_path = self.settings.summary_dir / summary_key(material_name)
         summary_path.write_text(
             f"# {material_name}\n\n{summary_text}", encoding="utf-8"
         )
