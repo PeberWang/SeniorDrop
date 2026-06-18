@@ -11,10 +11,10 @@ block_type 编号（飞书 docx，2026-06 FAQ 验证）：
 
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from lark_oapi.api.docx.v1 import (
-    Block, Text, TextElement, TextRun, Divider, Bitable,
+    Block, Text, TextElement, TextRun, TextElementStyle, Link, Divider, Bitable,
 )
 
 _HEADING_BUILDER = {1: ("heading1", 3), 2: ("heading2", 4), 3: ("heading3", 5)}
@@ -31,18 +31,41 @@ class BlockTree:
     descendants: List[Dict[str, Any]] = field(default_factory=list)  # FAQ 格式 dict 列表
 
 
-def _text_model(content: str) -> Text:
+def _text_run_model(content: str, link: Optional[str] = None) -> TextRun:
+    """构造单个 text_run。link 非空时挂 text_element_style.link（飞书 docx 超链接标准结构）。"""
+    builder = TextRun.builder().content(content)
+    if link:
+        style = (TextElementStyle.builder()
+                 .link(Link.builder().url(link).build()).build())
+        builder = builder.text_element_style(style)
+    return builder.build()
+
+
+def _text_model(content: str, link: Optional[str] = None) -> Text:
     """单 run 的 Text 内容模型，供正文 / 标题 / 列表复用。"""
     return (Text.builder()
             .elements([TextElement.builder()
-                       .text_run(TextRun.builder().content(content).build())
-                       .build()])
+                       .text_run(_text_run_model(content, link)).build()])
             .build())
 
 
-def text(content: str) -> Block:
-    """正文段落。"""
-    return Block.builder().block_type(2).text(_text_model(content)).build()
+def _text_model_runs(runs: List[Tuple[str, Optional[str]]]) -> Text:
+    """多 run 的 Text 内容模型 —— 一个段落 block 含多个 text_run（部分带 link）。
+    用于资料串讲段落：纯文本段 (text, None) + 资料名 (name, file_link) 交替。
+    """
+    elements = [TextElement.builder().text_run(_text_run_model(c, l)).build()
+                for c, l in runs if c]
+    return Text.builder().elements(elements).build()
+
+
+def text(content: str, link: Optional[str] = None) -> Block:
+    """正文段落（可选超链接，整段同链）。"""
+    return Block.builder().block_type(2).text(_text_model(content, link)).build()
+
+
+def text_runs(runs: List[Tuple[str, Optional[str]]]) -> Block:
+    """正文段落（多 run，部分带 link）。用于串讲嵌入资料名超链接。"""
+    return Block.builder().block_type(2).text(_text_model_runs(runs)).build()
 
 
 def heading(content: str, level: int = 1) -> Block:
@@ -101,7 +124,12 @@ def table(headers: list, rows: list, header_row: bool = True,
     descendants: List[Dict[str, Any]] = []
 
     for row_data in all_rows:
-        for cell_text in row_data:
+        for cell_data in row_data:
+            # cell_data: str 或 (text, link) 元组（Download 列用元组埋超链接）
+            if isinstance(cell_data, tuple):
+                cell_text, cell_link = cell_data[0], cell_data[1]
+            else:
+                cell_text, cell_link = str(cell_data), None
             cid = uuid.uuid4().hex
             tid = uuid.uuid4().hex
             cell_ids.append(cid)
@@ -112,11 +140,14 @@ def table(headers: list, rows: list, header_row: bool = True,
                 "table_cell": {},
                 "children": [tid],
             })
-            # cell 内的正文 block
+            # cell 内的正文 block（支持 link：text_element_style.link.url）
+            text_run: Dict[str, Any] = {"content": cell_text}
+            if cell_link:
+                text_run["text_element_style"] = {"link": {"url": cell_link}}
             descendants.append({
                 "block_id": tid,
                 "block_type": 2,
-                "text": {"elements": [{"text_run": {"content": str(cell_text)}}]},
+                "text": {"elements": [{"text_run": text_run}]},
                 "children": [],
             })
 

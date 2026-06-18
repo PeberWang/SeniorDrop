@@ -6,9 +6,9 @@ from collections import defaultdict
 from typing import Dict, Any, List
 
 from libs.feishu import FeishuAdapter
-from libs.data_adapter import read_course_db, write_course_db
+from libs.data_adapter import read_course_db, write_course_db, read_index
 from config.course_schema import (
-    CourseData, Material, Insight,
+    CourseData, Material, Insight, Contributor,
     COURSES_BY_YEAR,
     COURSE_TABLE_FIELDS, MATERIALS_TABLE_FIELDS, INSIGHTS_TABLE_FIELDS,
     SINGLE_SELECT_OPTIONS,
@@ -56,6 +56,50 @@ class SyncService:
         return {"course": result[COURSE_TABLE_NAME],
                 "materials": result[MATERIALS_TABLE_NAME],
                 "insights": result[INSIGHTS_TABLE_NAME]}
+
+    @staticmethod
+    def _aggregate_contributors(course: Dict[str, Any],
+                                course_materials: List[Dict[str, Any]]) -> None:
+        """从 materials 聚合贡献者到 course.contributors[]（去重 + 自动生成 contribution）。
+
+        - 已在 contributors[] 的不重复加
+        - contributor 已含届别（如 '22级小赵'）则直接用；否则拼 grade（'22级' + '牧远' → '22级牧远'）
+        - contribution 文本格式："贡献了 N 份资料（类型1、类型2）"
+        """
+        existing = {c.get("name") for c in course.get("contributors", [])}
+        stats: Dict[str, Dict[str, Any]] = defaultdict(
+            lambda: {"count": 0, "types": set(), "grade": "", "raw": ""})
+        for m in course_materials:
+            raw_name = (m.get("贡献者") or "").strip()
+            if not raw_name:
+                continue
+            grade = (m.get("届别") or "").strip()
+            key = f"{grade}|{raw_name}" if grade else raw_name
+            # 一条 bitable 记录可能含多个附件（多附件共享理由方案 A），count 按附件数算
+            attachments = m.get("文件附件", []) or []
+            if not isinstance(attachments, list):
+                attachments = [attachments] if attachments else []
+            stats[key]["count"] += len(attachments) if attachments else 1
+            stats[key]["raw"] = raw_name
+            stats[key]["grade"] = grade
+            if m.get("资料类型"):
+                stats[key]["types"].add(m["资料类型"])
+
+        for s in stats.values():
+            if "级" in s["raw"]:
+                full_name = s["raw"]
+            elif s["grade"]:
+                full_name = f"{s['grade']}{s['raw']}"
+            else:
+                full_name = s["raw"]
+            if not full_name or full_name in existing:
+                continue
+            types_str = "、".join(sorted(t for t in s["types"] if t)) or "多种类型"
+            contribution = f"贡献了 {s['count']} 份资料（{types_str}）"
+            course.setdefault("contributors", []).append(
+                Contributor(name=full_name, contribution=contribution).model_dump()
+            )
+            existing.add(full_name)
 
     @staticmethod
     def _enrich_with_options(fields_def):
@@ -144,19 +188,15 @@ class SyncService:
         all_course_names = set(m_by_course.keys()) | set(i_by_course.keys())
         updated, skipped = 0, 0
 
-        # 从 bitable 课程主数据表读全部课程，按 year 分组（"大一上"/"大一下" → "大一"）
-        all_course_records = await self.feishu.list_bitable_records(app_token, table_ids["course"])
+        # 课程→year 映射：过渡期从本地 db index.json 读（bitable 课程主数据表尚未填充）
+        # TODO(production): bitable 课程主数据表填充后改回读 bitable
+        index = read_index(self.db_dir)
         year_to_course_names = defaultdict(set)
-        for r in all_course_records:
-            f = r.get("fields") or {}
-            sem = f.get("开课学期", "")
-            name = f.get("课程名称", "")
-            if not sem or not name:
-                continue
-            for y in WIKI_YEAR_NODES:
-                if sem.startswith(y):
-                    year_to_course_names[y].add(name)
-                    break
+        for meta in index:
+            name = meta.get("name")
+            year = meta.get("year")
+            if name and year:
+                year_to_course_names[year].add(name)
 
         for year in WIKI_YEAR_NODES:
             year_course_names = year_to_course_names.get(year, set())
@@ -217,6 +257,9 @@ class SyncService:
                             score=ins.get("成绩", ""),
                             content=ins["心得内容"],
                         ).model_dump())
+
+                # 聚合贡献者：把 materials 里出现的新贡献者加到 contributors[]
+                self._aggregate_contributors(course, m_by_course.get(course_name, []))
 
                 updated += 1
 

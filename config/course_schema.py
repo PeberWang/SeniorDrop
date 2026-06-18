@@ -197,6 +197,23 @@ SINGLE_SELECT_OPTIONS = {
 
 # ==================== 课程加载（data/db 源真相，缺失回退 roster）====================
 
+def material_display_name(material: "Material") -> str:
+    """资料展示名规则：名称-类型-贡献者(届别+姓名)。
+
+    contributor 已含届别（如 '22级小赵'）则直接用；
+    否则拼 grade（如 grade='22级' + contributor='牧远' → '22级牧远'）。
+    缺字段时降级（无 type → '资料'，无 contributor → '匿名'）。
+    """
+    c = (material.contributor or "").strip()
+    if "级" not in c and (material.grade or "").strip():
+        c = f"{material.grade.strip()}{c}"
+    if not c:
+        c = "匿名"
+    mtype = (material.material_type or "").strip() or "资料"
+    name = (material.name or "").strip() or "未命名资料"
+    return f"{name}-{mtype}-{c}"
+
+
 def _load_year(year: str) -> List[CourseData]:
     """加载某学年课程：优先读 data/db/{year}.json，缺失则用 roster 基本字段构造。"""
     from config.settings import settings           # 延迟导入，保持模块顶层轻量

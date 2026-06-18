@@ -85,8 +85,12 @@ class Pipeline:
                     await feishu.write_mixed_blocks(obj_token, blocks, index=-1)
                     logger.info("学年文档内容写入完成", year=year, blocks=len(blocks))
 
-            # 3. 保存部署状态（供 doc 步骤使用）
-            state = {"space_id": space_id, "app_token": app_token or "", "year_nodes": year_data}
+            # 3. 保存部署状态（合并写入：保留 app_token / course_to_doc_map 等已有字段，避免跨学年运行时覆盖丢失）
+            state = read_json(_STATE_FILE) or {}
+            state["space_id"] = space_id
+            if app_token:
+                state["app_token"] = app_token
+            state.setdefault("year_nodes", {}).update(year_data)
             write_json(_STATE_FILE, state)
 
             await feishu.close()
@@ -147,6 +151,11 @@ class Pipeline:
             )
             course_to_doc_map = {item["course_name"]: item["url"] for item in result.get("results", []) if item.get("url")}
 
+            # 持久化 doc_url 映射到 deploy_state，让 link 命令可独立运行
+            state = read_json(_STATE_FILE) or {}
+            state["course_to_doc_map"] = course_to_doc_map
+            write_json(_STATE_FILE, state)
+
             # 追加学年总论（仅全量运行；limit != None 视为测试模式，跳过）
             if not limit:
                 for year, node_info in (state.get("year_nodes") or {}).items():
@@ -203,6 +212,10 @@ class Pipeline:
 
         替代原逐行 bitable search+update 模式，每学年仅 3 次 API 调用。
         """
+        # link 可独立运行：未显式传 map 时，从 deploy_state 读最近一次 docs 生成的映射
+        if not course_to_doc_map:
+            state_map = (read_json(_STATE_FILE) or {}).get("course_to_doc_map") or {}
+            course_to_doc_map = state_map
         if not course_to_doc_map:
             return {"status": "skipped", "reason": "未提供文档映射"}
         feishu = FeishuAdapter(self.settings)
