@@ -3,8 +3,6 @@
 > 把每届学长学姐的课程资料、心得、推荐理由，结构化沉淀下来，传给下一届同学。
 >
 > 适用任意院校、任意专业。下面以「南开大学 PPE 专业」为示例，你可以替换为自己的专业和课程清单。
->
-> 历史版本：[README_v5](docs/README_history/README_v5.md)
 
 ---
 
@@ -22,106 +20,73 @@
 
 ## 二、工作原理
 
-```
-              [学生表单]                [管理员 UI]
-                  │                         │
-                  ▼                         ▼
-       ┌───────────────────────────────────────────┐
-       │  飞书 bitable（三张表，唯一真相源）         │
-       │  ├─ 课程主数据表（课程名/老师/学期/类型/考试）│
-       │  ├─ 资料管理表（贡献者/课程/类型/理由/附件）│
-       │  └─ 心得管理表（作者/课程/成绩/心得）       │
-       └──────────────┬────────────────────────────┘
-                      │
-                      ▼
-       ┌───────────────────────────────────────────┐
-       │  archive-materials：飞书附件 → 阿里云 OSS  │
-       │  ocr-materials：OSS → PDF → OCR → 摘要    │
-       │  sync：聚合 bitable 三表 + 双层门控        │
-       └──────────────┬────────────────────────────┘
-                      │
-                      ▼
-       ┌───────────────────────────────────────────┐
-       │  docs：LLM 生成课程学习指南文档            │
-       │  link：回填导航表的「学习指南」字段        │
-       └──────────────┬────────────────────────────┘
-                      │
-                      ▼
-                飞书知识库
-       4 个学年文档 + N 个课程文档
-```
+学生通过飞书表单提交资料 → 落到飞书 bitable 三张表（课程主数据 / 资料管理 / 心得管理）→ `archive-materials` 归档到 OSS → `ocr-materials` 提取全文 + LLM 摘要 → `sync` 聚合 + 双层门控 → `docs` 用 LLM 生成课程文档 → `link` 把链接回填到学年导航表。学生最终看到的就是飞书知识库里的可读文档。
 
-**双层门控（鲁棒性保证）**：
-- 学生表单提交的资料，关联的课程**必须**在「课程主数据表」里存在，才会被 sync 聚合 + 进入文档
-- 第一层：sync 阶段，发现资料表有课程但主数据表无 → 跳过 + 警告「请管理员在 bitable 加该课」
-- 第二层：docs 阶段，CourseDataService 只返回主数据表里存在的课程
-
-这样能挡住学生乱填课程名（拼写错 / 测试 / 没有的课），不会污染文档库。
+**双层门控保证**：学生填的课程必须先在「课程主数据表」里存在（管理员维护），否则 sync 跳过 + 警告，避免乱填污染文档库。
 
 ---
 
-## 三、5 分钟快速开始
+## 三、快速开始
 
-### 3.1 准备环境
+### 3.1 准备环境（约 30-60 分钟，每步都有详细指引）
 
-**必装**：
-- Python 3.11+
-- [LibreOffice](https://www.libreoffice.org/)（Office 文档转 PDF 用，OCR 流程必需）
+部署前需要完成 6 件准备工作。如果你不知道某一步怎么做，**点对应链接跟着 [00-快速开始.md](docs/00-快速开始.md) 走**，每步都有图文级说明：
 
-**注册账号**：
-- 飞书企业版（免费版 50 人内即可），创建一个企业应用
-- 阿里云账号，开通 OSS 服务，新建一个 bucket（建议改「公共读」权限）
+| 准备工作 | 用途 | 不知道怎么做？看这里 |
+|---|---|---|
+| 装 Python 3.11+ | 跑代码 | [00 § 1.5](docs/00-快速开始.md#15-装-python-311) |
+| 装 LibreOffice | Office 文档 OCR 转 PDF | [00 § 1.6](docs/00-快速开始.md#16-装-libreofficeoffice-文档转-pdf-用ocr-流程必需) |
+| 注册飞书企业版 + 建应用 | 知识库 + bitable 载体 | [00 § 1.1](docs/00-快速开始.md#11-飞书企业版用作知识库--多维表格载体) |
+| 注册阿里云 + 开通 OSS + 建公共读 bucket | 资料归档存储 | [00 § 1.2](docs/00-快速开始.md#12-阿里云-oss用作资料归档存储) |
+| 注册 DeepSeek + 充值 | LLM（生成课程文档 + 摘要） | [00 § 1.3](docs/00-快速开始.md#13-deepseek-api用作-llm生成课程文档--摘要) |
+| 注册智谱 GLM-OCR + 充值 | OCR API | [00 § 1.4](docs/00-快速开始.md#14-智谱-glm-ocr用作-pdf-ocr) |
 
-### 3.2 安装
+**三个特别提醒**：
+- 装 Python 时**务必勾选「Add Python to PATH」**（Windows）
+- 阿里云 OSS bucket 读写权限选「**公共读**」（学生凭链接直接下载）
+- AccessKey Secret 只显示一次，**立刻复制保存**
+
+### 3.2 下载代码 + 装依赖
 
 ```bash
-git clone <your-repo-url>
-cd 课程资料智能大礼包
+git clone https://github.com/PeberWang/PPE-CloudSmart-GiftBox.git
+cd PPE-CloudSmart-GiftBox
 
 pip install -r requirements.txt
 ```
 
+下载慢的话换国内镜像：`pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple`
+
+> 不熟悉 git？在 GitHub 页面点「Code」→「Download ZIP」→ 解压也行。详见 [00 § 2.1](docs/00-快速开始.md#21-下载代码)。
+
 ### 3.3 配置 .env
 
-```bash
-cp .env.example .env
-```
+复制 `.env.example` 为 `.env`（Windows: `copy .env.example .env`；macOS/Linux: `cp .env.example .env`），用记事本打开 `.env`，按 [00 § 三](docs/00-快速开始.md#三配置-env-文件) 填入凭证。
 
-打开 `.env`，填入以下字段（字段含义详见 [04-技术原理.md](docs/04-技术原理.md)）：
+关键字段（字段含义详见 [04-技术原理.md](docs/04-技术原理.md)）：
 
 ```bash
-# 飞书（开放平台获取）
-FEISHU_APP_ID=cli_xxxxxxxxxxxxxxxx
-FEISHU_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-
-# LLM（DeepSeek，OpenAI 兼容；总论/课程文档/摘要生成）
-LLM_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-LLM_BASE_URL=https://api.deepseek.com
-LLM_MODEL=deepseek-v4-pro
-
-# OCR（智谱 GLM-OCR，layout_parsing 接口）
-GLM_API_KEY=xxxxxxxxxxxxxxxx.xxxxxxxxxxxxxxxx
-GLM_OCR_URL=https://open.bigmodel.cn/api/paas/v4/layout_parsing
-
-# 云盘存储
-CLOUD_DRIVE_BACKEND=aliyun_oss
-OSS_BUCKET=your-bucket-name
-OSS_ENDPOINT=https://oss-cn-beijing.aliyuncs.com
-OSS_ACCESS_KEY_ID=LTAIxxxxxxxxxxxxxxxx
-OSS_ACCESS_KEY_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-# 公共读直链（bucket 改公共读后启用，学生长期可下载）
-OSS_PUBLIC_BASE=https://your-bucket-name.oss-cn-beijing.aliyuncs.com
-
-# 知识库 + bitable（首次跑 init-bitable 后自动写入 BITABLE_APP_TOKEN）
-WIKI_SPACE_NAME=XX 专业课程大礼包
+FEISHU_APP_ID=cli_xxxxxxxxxxxxxxxx                  # 飞书应用 ID
+FEISHU_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx   # 飞书应用 Secret
+LLM_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx      # DeepSeek API Key
+GLM_API_KEY=xxxxxxxxxxxxxxxx.xxxxxxxxxxxxxxxx        # 智谱 GLM API Key
+OSS_BUCKET=your-bucket-name                          # 你的 OSS bucket 名
+OSS_ENDPOINT=https://oss-cn-beijing.aliyuncs.com     # 你的 OSS endpoint
+OSS_ACCESS_KEY_ID=LTAIxxxxxxxxxxxxxxxx               # 阿里云 AK
+OSS_ACCESS_KEY_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx# 阿里云 SK
+OSS_PUBLIC_BASE=https://your-bucket-name.oss-cn-beijing.aliyuncs.com  # 公共读直链
+WIKI_SPACE_NAME=XX 专业课程大礼包                   # 你的专业名
+# BITABLE_APP_TOKEN 先留空，下一步 init-bitable 后填回
 ```
 
-### 3.4 首次部署（5 命令）
+### 3.4 首次部署（6 命令）
+
+按顺序在终端跑：
 
 ```bash
 # 1. 初始化 bitable（建课程主数据表 + 资料管理表 + 心得管理表）
 python deploy.py init-bitable
-# 把返回的 app_token 填回 .env 的 BITABLE_APP_TOKEN
+# 把返回的 app_token 填回 .env 的 BITABLE_APP_TOKEN，保存 .env
 
 # 2. 设置 bitable 链接分享（凭链接即可访问，方便管理员 UI 操作）
 python deploy.py open-bitable
@@ -148,7 +113,7 @@ python deploy.py link
 
 ## 四、日常维护（管理员）
 
-### 4.1 学生通过表单提交了新资料后
+### 4.1 学生提交了新资料后
 
 学生通过飞书表单填了资料 → 资料管理表多了一条记录（审核状态默认「待审核」）→ 你需要：
 
@@ -193,7 +158,7 @@ python deploy.py logs --limit 100  # 查看最近 100 条
 
 ```bash
 # 清空 bitable 三张表所有记录（保留表结构 + 字段定义）
-python deploy.py reset-bitable
+python deploy.py reset-bitable --yes
 
 # 注意：清空后必须重新 seed-course 录入课程
 ```
@@ -238,27 +203,7 @@ python deploy.py reset-bitable
 
 ---
 
-## 八、技术架构（给好奇的同学）
-
-四层架构：
-
-```
-deploy.py (CLI 入口，typer)
-    ↓
-glue/         — 编排层：串联 services，零业务逻辑
-    ↓
-services/     — 业务层：功能单元，调用 libs
-    ↓
-libs/         — 适配层：封装第三方库差异
-    ↓
-config/       — 配置 + 数据模型
-```
-
-详见 [04-技术原理.md](docs/04-技术原理.md) 和 [CLAUDE.md](CLAUDE.md)。
-
----
-
-## 九、系列文档
+## 八、系列文档
 
 | 文档 | 适合谁 |
 |---|---|
@@ -269,10 +214,5 @@ config/       — 配置 + 数据模型
 | [04-技术原理.md](docs/04-技术原理.md) | 想理解工作原理、做二次开发的同学 |
 
 ---
-
-## 十、贡献者
-
-- 项目设计 + 维护：你的名字 / 团队
-- 资料贡献者：每届学长学姐
 
 部署遇到问题？先看 [03-故障排查.md](docs/03-故障排查.md)，再看 [01-管理员指南.md](docs/01-管理员指南.md)。
