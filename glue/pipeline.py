@@ -17,7 +17,8 @@ from services.doc_service import DocService
 from services.material_service import MaterialService
 from services.perm_service import PermService
 from services.sync_service import SyncService
-from config.course_schema import get_courses_by_year, get_all_courses, WIKI_YEAR_NODES
+from services.course_data_service import CourseDataService
+from config.course_schema import WIKI_YEAR_NODES
 from config.settings import Settings
 from glue.rollback import RollbackManager
 
@@ -66,11 +67,12 @@ class Pipeline:
                     space_id = result["space_id"]
                     self.rollback_manager.record_wiki_space(space_id, sn)
 
-            # 2. 学年节点 → 原生表格内容（无需 bitable）
+            # 2. 学年节点 → 原生表格内容（从 bitable 主数据表读课程）
             years = [year_filter] if year_filter else WIKI_YEAR_NODES
             year_data: Dict[str, Any] = {}
+            course_svc = CourseDataService(self.settings)
             for year in years:
-                courses = get_courses_by_year(year)
+                courses = await course_svc.get_by_year(year, app_token)
                 if not courses:
                     continue
 
@@ -137,13 +139,26 @@ class Pipeline:
     # ── 课程文档生成流程（WP5 实现）─────────────────────────────────────────
 
     @log_operation("doc_pipeline")
-    async def doc_pipeline(self, space_id: str = None, courses: list = None, limit: int = None) -> Dict[str, Any]:
-        logger.info("开始文档生成流程", limit=limit)
+    async def doc_pipeline(self, space_id: str = None, courses: list = None, limit: int = None,
+                           year_filter: str = None) -> Dict[str, Any]:
+        logger.info("开始文档生成流程", limit=limit, year_filter=year_filter)
         feishu = FeishuAdapter(self.settings)
         llm = LLMAdapter(self.settings)
         doc = DocService(feishu, llm)
         state = read_json(_STATE_FILE) or {}
-        all_courses = courses or get_all_courses()
+        app_token = self.settings.bitable_app_token or state.get("app_token")
+        if courses is None:
+            if not app_token:
+                await feishu.close(); await llm.close()
+                return {"status": "error", "message": "缺少 app_token，无法读取 bitable 课程"}
+            course_svc = CourseDataService(self.settings)
+            all_courses = await course_svc.get_all(app_token)
+            if year_filter:
+                from services.course_data_service import _derive_year
+                all_courses = [c for c in all_courses if _derive_year(c.semester) == year_filter]
+                logger.info("按 year_filter 过滤后课程数", count=len(all_courses))
+        else:
+            all_courses = courses
         try:
             result = await doc.generate_all_course_guides(
                 space_id=state.get("space_id") or space_id,
@@ -157,12 +172,14 @@ class Pipeline:
             write_json(_STATE_FILE, state)
 
             # 追加学年总论（仅全量运行；limit != None 视为测试模式，跳过）
-            if not limit:
+            if not limit and app_token:
+                course_svc = CourseDataService(self.settings)
                 for year, node_info in (state.get("year_nodes") or {}).items():
                     obj_token = node_info.get("obj_token") if node_info else None
                     if obj_token:
                         try:
-                            await doc.replace_year_overview(obj_token, year, get_courses_by_year(year))
+                            year_courses = await course_svc.get_by_year(year, app_token)
+                            await doc.replace_year_overview(obj_token, year, year_courses)
                         except Exception as e:
                             logger.warning("学年总论追加失败，跳过", year=year, error=str(e))
 
@@ -241,8 +258,13 @@ class Pipeline:
                     logger.warning("未找到学年文档中的导航表", year=year)
                     continue
 
-                # 2. 构建含链接的新导航表
-                courses = get_courses_by_year(year)
+                # 2. 构建含链接的新导航表（从 bitable 读课程）
+                app_token = self.settings.bitable_app_token or state.get("app_token")
+                if not app_token:
+                    logger.warning("缺少 app_token，跳过 link 回填", year=year)
+                    continue
+                course_svc = CourseDataService(self.settings)
+                courses = await course_svc.get_by_year(year, app_token)
                 for c in courses:
                     if c.name in course_to_doc_map:
                         c.doc_url = course_to_doc_map[c.name]
@@ -263,11 +285,11 @@ class Pipeline:
 
     @log_operation("sync_form_pipeline")
     async def sync_form_pipeline(self, app_token: str) -> Dict[str, Any]:
-        """从 bitable 管理表拉取已批准记录，合并到 data/db/*.json。"""
+        """运行时聚合 bitable 三张表 → in-memory CourseData 列表 + 双层门控。"""
         logger.info("开始表单数据同步")
         feishu = FeishuAdapter(self.settings)
         try:
-            svc = SyncService(feishu, self.settings.course_db_dir)
+            svc = SyncService(feishu, self.settings)
             return await svc.sync(app_token)
         finally:
             await feishu.close()
@@ -279,7 +301,7 @@ class Pipeline:
         """创建管理 bitable 应用 + 资料管理表 + 心得管理表，返回 app_token 和 URL。"""
         logger.info("开始创建管理 bitable", app_name=app_name)
         feishu = FeishuAdapter(self.settings)
-        sync = SyncService(feishu, self.settings.course_db_dir)
+        sync = SyncService(feishu, self.settings)
         try:
             app = await feishu.create_bitable_app(app_name)
             app_token = app["app_token"]
@@ -330,7 +352,7 @@ class Pipeline:
         logger.info("开始修复 bitable 单选选项", app_token=app_token)
         feishu = FeishuAdapter(self.settings)
         try:
-            svc = SyncService(feishu, self.settings.course_db_dir)
+            svc = SyncService(feishu, self.settings)
             return await svc.fix_single_select_options(app_token)
         finally:
             await feishu.close()
@@ -385,3 +407,77 @@ class Pipeline:
             return await svc.purge_archived(app_token, table_id, older_than_days)
         finally:
             await feishu.close()
+
+    # ── 重置 + 录入流程（首次部署 / 重建 demo）─────────────────────────────
+
+    @log_operation("reset_bitable_pipeline")
+    async def reset_bitable_pipeline(self, app_token: str) -> Dict[str, Any]:
+        """清空三张管理表所有记录（保留表结构 + 字段定义）。"""
+        logger.warning("即将清空 bitable 所有记录（不可逆）", app_token=app_token)
+        feishu = FeishuAdapter(self.settings)
+        try:
+            svc = SyncService(feishu, self.settings)
+            return await svc.reset_all_records(app_token)
+        finally:
+            await feishu.close()
+
+    @log_operation("seed_course_pipeline")
+    async def seed_course_pipeline(self, app_token: str, *,
+                                    name: str = None, semester: str = None,
+                                    course_type: str = None, exam: str = None,
+                                    teacher: str = "",
+                                    from_file: str = None) -> Dict[str, Any]:
+        """录课程到主数据表。支持单条参数或 --from-file 批量导入。"""
+        feishu = FeishuAdapter(self.settings)
+        try:
+            svc = SyncService(feishu, self.settings)
+            if from_file:
+                return await svc.import_courses_from_table(app_token, from_file)
+            if not (name and semester):
+                return {"status": "error",
+                        "message": "单条录入需要 --name 和 --semester 参数"}
+            return await svc.add_course(
+                app_token, name=name, semester=semester,
+                course_type=course_type or "专业必修课",
+                exam=exam or "其他", teacher=teacher,
+            )
+        finally:
+            await feishu.close()
+
+    @log_operation("seed_materials_pipeline")
+    async def seed_materials_pipeline(self, app_token: str, local_dir: str,
+                                       course_name: str, *,
+                                       contributor: str = "管理员",
+                                       grade: str = "",
+                                       material_type: str = "其他",
+                                       reason: str = "") -> Dict[str, Any]:
+        """批量录入 raw 学习资料：扫本地文件夹 → 上传飞书 drive → 建资料表记录。"""
+        from services.seed_materials_service import SeedMaterialsService
+        logger.info("开始批量录入资料", dir=local_dir, course=course_name)
+        feishu = FeishuAdapter(self.settings)
+        try:
+            sync = SyncService(feishu, self.settings)
+            svc = SeedMaterialsService(feishu, sync)
+            return await svc.seed_from_dir(
+                app_token, local_dir, course_name,
+                contributor=contributor, grade=grade,
+                material_type=material_type, reason=reason,
+            )
+        finally:
+            await feishu.close()
+
+    @log_operation("ocr_materials_pipeline")
+    async def ocr_materials_pipeline(self) -> Dict[str, Any]:
+        """从资料表扫已归档资料 → 转 PDF（必要时） → GLM-OCR → LLM 摘要 → 回填 summary。"""
+        from libs.cloud import get_drive
+        from services.ocr_service import OcrService
+        logger.info("开始 OCR + 摘要流程")
+        feishu = FeishuAdapter(self.settings)
+        llm = LLMAdapter(self.settings)
+        cloud = get_drive(self.settings)
+        try:
+            svc = OcrService(feishu, llm, cloud, self.settings)
+            return await svc.process_all()
+        finally:
+            await feishu.close()
+            await llm.close()

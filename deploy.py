@@ -165,6 +165,78 @@ def purge_archived(
     asyncio.run(_deploy_purge_archived(settings, older_than_days=older_than_days))
 
 
+@app.command(name="reset-bitable")
+def reset_bitable(
+    yes: bool = typer.Option(False, "--yes", "-y",
+                              help="跳过确认提示（脚本调用用）"),
+):
+    """清空 bitable 三张表所有记录（不可逆！保留表结构 + 字段定义）"""
+    if not yes:
+        typer.echo("即将清空课程主数据表 + 资料管理表 + 心得管理表的所有记录。")
+        typer.echo("这是不可逆操作。加 --yes 跳过此提示。")
+        raise typer.Abort()
+    from glue.deploy import _deploy_reset_bitable
+    settings = Settings()
+    asyncio.run(_deploy_reset_bitable(settings))
+
+
+@app.command(name="seed-course")
+def seed_course(
+    name: Optional[str] = typer.Option(None, "--name", help="课程名称（单条录入）"),
+    semester: Optional[str] = typer.Option(None, "--semester", help="开课学期，如 大二下"),
+    course_type: Optional[str] = typer.Option("专业必修课", "--type", help="课程类型"),
+    exam: Optional[str] = typer.Option("其他", "--exam", help="考试形式：闭卷/开卷/论文/其他"),
+    teacher: str = typer.Option("", "--teacher", help="授课老师"),
+    from_file: Optional[str] = typer.Option(None, "--from-file",
+                                             help="批量导入：Excel/CSV/TSV 文件路径"),
+):
+    """录课程到主数据表。
+
+    单条：python deploy.py seed-course --name 概率论与数理统计 --semester 大二下 --teacher 刘会刚 --exam 闭卷
+
+    批量：python deploy.py seed-course --from-file data/课程清单.xlsx
+    """
+    from glue.deploy import _deploy_seed_course
+    settings = Settings()
+    asyncio.run(_deploy_seed_course(
+        settings, name=name, semester=semester,
+        course_type=course_type, exam=exam, teacher=teacher,
+        from_file=from_file,
+    ))
+
+
+@app.command(name="seed-materials")
+def seed_materials(
+    local_dir: str = typer.Argument(..., help="本地资料目录（递归扫描所有文件）"),
+    course_name: str = typer.Argument(..., help="关联课程名（必须已在主数据表中）"),
+    contributor: str = typer.Option("管理员", "--contributor", help="贡献者署名"),
+    grade: str = typer.Option("", "--grade", help="届别，如 22级"),
+    material_type: str = typer.Option("其他", "--type",
+                                       help="资料类型：PPT/笔记/真题/教材/..."),
+    reason: str = typer.Option("", "--reason", help="推荐理由（一对多：本批次所有文件共享）"),
+):
+    """批量录入 raw 学习资料：扫本地文件夹 → 飞书 drive → 资料管理表。
+
+    示例：
+      python deploy.py seed-materials "data/courses/大二上/概率论与数理统计（刘会刚老师）" 概率论与数理统计 --grade 22级 --reason "初始录入测试资料"
+    """
+    from glue.deploy import _deploy_seed_materials
+    settings = Settings()
+    asyncio.run(_deploy_seed_materials(
+        settings, local_dir, course_name,
+        contributor=contributor, grade=grade,
+        material_type=material_type, reason=reason,
+    ))
+
+
+@app.command(name="ocr-materials")
+def ocr_materials_cmd():
+    """OCR + 摘要：扫资料表已归档记录 → OSS 下载 → 转 PDF → GLM-OCR → LLM 摘要 → 回填 summary"""
+    from glue.deploy import _deploy_ocr_materials
+    settings = Settings()
+    asyncio.run(_deploy_ocr_materials(settings))
+
+
 @app.command()
 def logs(limit: int = typer.Option(50, "--limit", help="显示最近 N 条日志")):
     """显示操作日志摘要和最近记录"""

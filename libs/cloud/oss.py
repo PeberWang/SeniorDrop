@@ -5,9 +5,10 @@
     access_key  — 个人/开发期，AK+SK 直接鉴权
     ram_role    — 企业/交付期，AssumeRole 获取 STS 临时凭证（无永久密钥落地）
 
-下载策略:
-    设置 OSS_CDN_DOMAIN → 返回 CDN 稳定 URL（企业交付推荐）
-    未设置 → 返回预签名 URL（OSS_PRESIGNED_TTL 控制有效期，默认 86400s）
+下载策略（优先级从高到低）:
+    1. OSS_PUBLIC_BASE → 纯直链 URL（bucket 改公共读后使用，长期有效，学生随时可访问）
+    2. OSS_CDN_DOMAIN → CDN 稳定 URL（企业交付推荐）
+    3. 未设置 → 返回预签名 URL（OSS_PRESIGNED_TTL 控制有效期，默认 86400s，过期失效）
 """
 
 import base64
@@ -33,9 +34,11 @@ class AliyunOSSDrive(CloudDriveAdapter):
                  auth_mode: str = "access_key",
                  access_key_id: str = "", access_key_secret: str = "",
                  role_arn: str = "", role_session_name: str = "ppe-giftbox-deploy",
-                 presigned_ttl: int = 86400, cdn_domain: str = ""):
+                 presigned_ttl: int = 86400, cdn_domain: str = "",
+                 public_base: str = ""):
         self.presigned_ttl = presigned_ttl
         self.cdn_domain = cdn_domain
+        self.public_base = public_base
 
         if auth_mode == "access_key":
             if not access_key_id or not access_key_secret:
@@ -121,6 +124,8 @@ class AliyunOSSDrive(CloudDriveAdapter):
         return name
 
     async def download_url(self, key: str) -> str:
+        if self.public_base:
+            return f"{self.public_base.rstrip('/')}/{key}"
         if self.cdn_domain:
             return f"https://{self.cdn_domain}/{key}"
         return self.bucket.sign_url("GET", key, self.presigned_ttl)

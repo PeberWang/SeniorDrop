@@ -91,6 +91,7 @@ class ArchiveService:
         course_name = course_name or "未知课程"
         archived_tokens = []
         primary_url = ""
+        primary_name = ""
 
         for att in attachments:
             file_token = att.get("file_token") or att.get("token", "")
@@ -114,6 +115,7 @@ class ArchiveService:
                 oss_url = await self.cloud.download_url(oss_key)
                 if not primary_url:
                     primary_url = oss_url
+                    primary_name = original_name
                 archived_tokens.append(file_token)
                 logger.info("附件已归档到 OSS",
                             file=original_name, oss_key=oss_key,
@@ -126,8 +128,9 @@ class ArchiveService:
             raise ArchiveIntegrityException(f"记录 {record_id} 无可归档附件")
 
         # 3. 回填 URL + 归档时间到资料表
+        # text 用首份资料名（人类可读），link 用首份 OSS URL
         update_fields = {
-            "文件链接": {"text": archived_tokens[0], "link": primary_url},
+            "文件链接": {"text": primary_name, "link": primary_url},
             "归档时间": int(datetime.now().timestamp() * 1000),
         }
         await self.feishu.update_bitable_record(app_token, table_id, record_id, update_fields)

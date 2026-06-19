@@ -13,7 +13,6 @@ from dataclasses import dataclass
 from libs.feishu import FeishuAdapter
 from services.material_service import MaterialService
 from services.course_data_service import CourseDataService
-from config.course_schema import get_all_courses, get_courses_by_year
 from config.settings import Settings
 from glue.rollback import RollbackManager
 from glue.pipeline import Pipeline
@@ -73,7 +72,7 @@ def _save_app_token(app_token: str) -> None:
 
 @dataclass
 class DeployArgs:
-    """部署参数"""
+    """部署参数（统一承载所有 mode 所需字段，不同 mode 取自己关心的）"""
     mode: str
     limit: Optional[int] = None
     incremental: bool = False
@@ -81,6 +80,23 @@ class DeployArgs:
     space_id: Optional[str] = None
     import_config: Optional[str] = None
     year_filter: Optional[str] = None
+    # seed-course
+    name: Optional[str] = None
+    semester: Optional[str] = None
+    course_type: Optional[str] = None
+    exam: Optional[str] = None
+    teacher: str = ""
+    from_file: Optional[str] = None
+    # seed-materials
+    local_dir: str = ""
+    course_name: str = ""
+    contributor: str = "管理员"
+    grade: str = ""
+    material_type: str = "其他"
+    reason: str = ""
+    # archive
+    purge_immediately: bool = False
+    older_than_days: int = 7
 
 
 async def _deploy_wiki(settings: Settings, year_filter: Optional[str] = None) -> Dict[str, Any]:
@@ -119,13 +135,8 @@ async def _deploy_docs(settings: Settings, limit: int = None,
                        year_filter: Optional[str] = None) -> Dict[str, Any]:
     logger.info("开始部署云文档", limit=limit, year_filter=year_filter)
     pipeline = Pipeline(settings)
-    course_data = CourseDataService(settings)
-    app_token = await _resolve_app_token(settings)
-    all_courses = await course_data.get_all(app_token)
-    if year_filter:
-        all_courses = [c for c in all_courses if c.semester.startswith(year_filter)]
-        logger.info("按 year_filter 过滤后课程数", count=len(all_courses))
-    result = await pipeline.doc_pipeline(space_id=None, courses=all_courses, limit=limit)
+    result = await pipeline.doc_pipeline(space_id=None, courses=None,
+                                          limit=limit, year_filter=year_filter)
     return result
 
 
@@ -245,6 +256,52 @@ async def _deploy_purge_archived(settings: Settings, older_than_days: int = 7) -
     return await pipeline.purge_archived_pipeline(app_token, older_than_days=older_than_days)
 
 
+async def _deploy_reset_bitable(settings: Settings) -> Dict[str, Any]:
+    """清空 bitable 三张表所有记录（不可逆）。"""
+    logger.warning("即将清空 bitable（不可逆）")
+    app_token = await _resolve_app_token(settings)
+    pipeline = Pipeline(settings)
+    return await pipeline.reset_bitable_pipeline(app_token)
+
+
+async def _deploy_seed_course(settings: Settings, *,
+                                name: str = None, semester: str = None,
+                                course_type: str = None, exam: str = None,
+                                teacher: str = "",
+                                from_file: str = None) -> Dict[str, Any]:
+    """录课程到主数据表（单条参数或 --from-file 批量）。"""
+    app_token = await _resolve_app_token(settings)
+    pipeline = Pipeline(settings)
+    return await pipeline.seed_course_pipeline(
+        app_token, name=name, semester=semester,
+        course_type=course_type, exam=exam, teacher=teacher,
+        from_file=from_file,
+    )
+
+
+async def _deploy_seed_materials(settings: Settings, local_dir: str,
+                                   course_name: str, *,
+                                   contributor: str = "管理员",
+                                   grade: str = "",
+                                   material_type: str = "其他",
+                                   reason: str = "") -> Dict[str, Any]:
+    """批量录入 raw 学习资料。"""
+    app_token = await _resolve_app_token(settings)
+    pipeline = Pipeline(settings)
+    return await pipeline.seed_materials_pipeline(
+        app_token, local_dir, course_name,
+        contributor=contributor, grade=grade,
+        material_type=material_type, reason=reason,
+    )
+
+
+async def _deploy_ocr_materials(settings: Settings) -> Dict[str, Any]:
+    """OCR + 摘要（OSS → PDF → OCR → 摘要 → 飞书 drive + 回填）。"""
+    logger.info("开始 OCR 流程")
+    pipeline = Pipeline(settings)
+    return await pipeline.ocr_materials_pipeline()
+
+
 async def _deploy_full(settings: Settings, year_filter: Optional[str] = None) -> Dict[str, Any]:
     logger.info("开始完整部署", year_filter=year_filter)
     rollback_manager = RollbackManager()
@@ -293,6 +350,17 @@ _MODE_HANDLERS = {
     "sync-form": lambda s, a: _deploy_sync_form(s),
     "init-bitable": lambda s, a: _deploy_init_bitable(s),
     "fix-bitable": lambda s, a: _deploy_fix_bitable(s),
+    "reset-bitable": lambda s, a: _deploy_reset_bitable(s),
+    "seed-course": lambda s, a: _deploy_seed_course(
+        s, name=a.name, semester=a.semester, course_type=a.course_type,
+        exam=a.exam, teacher=a.teacher, from_file=a.from_file),
+    "seed-materials": lambda s, a: _deploy_seed_materials(
+        s, a.local_dir, a.course_name,
+        contributor=a.contributor, grade=a.grade,
+        material_type=a.material_type, reason=a.reason),
+    "ocr-materials": lambda s, a: _deploy_ocr_materials(s),
+    "archive-materials": lambda s, a: _deploy_archive(s, purge_immediately=a.purge_immediately),
+    "purge-archived": lambda s, a: _deploy_purge_archived(s, older_than_days=a.older_than_days),
     "full": lambda s, a: _deploy_full(s, year_filter=a.year_filter),
     "sync": lambda s, a: _deploy_sync(s),
 }

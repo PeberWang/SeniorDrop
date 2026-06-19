@@ -19,6 +19,7 @@ def get_drive(settings) -> CloudDriveAdapter:
             role_session_name=settings.oss_role_session_name,
             presigned_ttl=settings.oss_presigned_ttl,
             cdn_domain=settings.oss_cdn_domain,
+            public_base=settings.oss_public_base or "",
         )
     raise ValueError(f"未知云盘后端: {settings.cloud_drive_backend}")
 

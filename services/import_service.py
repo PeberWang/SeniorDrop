@@ -13,13 +13,12 @@ import pandas as pd
 from libs.feishu import FeishuAdapter
 from libs.data_adapter import DataAdapter
 from config.settings import Settings
-from config.course_schema import get_all_courses
 
 logger = structlog.get_logger()
 
 
 class ImportService:
-    """表单数据导入服务"""
+    """表单数据导入服务（Excel/CSV 批量导入到 bitable）"""
 
     def __init__(self, feishu: FeishuAdapter):
         """初始化服务"""
@@ -34,7 +33,7 @@ class ImportService:
         return DataAdapter.read_csv(file_path, encoding)
 
     def validate_course_data(self, df: pd.DataFrame, course_name_column: str = "课程名称") -> Dict[str, Any]:
-        """验证课程数据格式"""
+        """验证课程数据格式（仅本地结构校验，不查 bitable）"""
         try:
             # 检查必需列
             required_columns = [course_name_column]
@@ -47,18 +46,20 @@ class ImportService:
             empty_rows = df[course_name_column].isna().sum()
             valid_rows = total_rows - empty_rows
 
-            # 获取所有现有课程名称
-            existing_courses = {c.name for c in get_all_courses()}
-            new_courses = set(df[course_name_column].dropna().tolist())
-            duplicate_courses = new_courses & existing_courses
+            # Excel 内部去重检查（不查 bitable，运行时门控由 sync 负责）
+            all_names = df[course_name_column].dropna().tolist()
+            seen, duplicates = set(), set()
+            for name in all_names:
+                if name in seen:
+                    duplicates.add(name)
+                seen.add(name)
 
             return {
                 "total_rows": total_rows,
                 "valid_rows": valid_rows,
                 "empty_rows": empty_rows,
-                "duplicate_courses": list(duplicate_courses),
-                "new_courses": list(new_courses - existing_courses),
-                "validation_passed": empty_rows == 0 and len(duplicate_courses) == 0
+                "duplicate_courses": list(duplicates),
+                "validation_passed": empty_rows == 0 and len(duplicates) == 0
             }
 
         except Exception as e:

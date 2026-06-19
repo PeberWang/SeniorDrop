@@ -3,9 +3,10 @@
 PPE云端智能大礼包 - 课程数据模型与字段定义
 
 数据分层：
-- CourseData（含 insights/materials/reflections/contributors）是源真相，落地于 data/db/*.json。
+- CourseData（含 insights/materials/contributors）是运行时聚合对象，从 bitable 三张表实时构造，不持久化到本地。
 - 前台 nav 表（NAV_TABLE_FIELDS）：面向新生的入口导航，内嵌进学年文档。
-- 后台管理表（MATERIALS/INSIGHTS_TABLE_FIELDS）：运营视角，供飞书表单采集（设计蓝图，下次接入）。
+- 后台管理表（COURSE/MATERIALS/INSIGHTS_TABLE_FIELDS）：bitable 三张表是真相源，飞书表单采集。
+- COURSES_BY_YEAR 是项目示例种子（用于单选字段初始化选项），不再作为运行时真相源。
 """
 
 from typing import List, Dict, Any
@@ -41,7 +42,7 @@ class Contributor(BaseModel):
 
 
 class CourseData(BaseModel):
-    """课程完整数据模型 —— data/db/{学年}.json 的每一行。"""
+    """课程完整数据模型 —— 运行时从 bitable 三张表聚合，不持久化到本地。"""
     # 基本字段（用于前台 nav 表；飞书 bitable 课程主数据表结构）
     name: str
     teacher: str = ""
@@ -80,7 +81,7 @@ GRADES = ["22级", "23级", "24级"]
 WIKI_YEAR_NODES = ["大一", "大二", "大三", "大四"]
 
 
-# ==================== 课程花名册（roster，data/db 缺失时的回退种子）====================
+# ==================== 课程花名册（项目示例种子，仅用于单选字段初始化选项）====================
 
 COURSES_BY_YEAR = {
     "大一": [
@@ -195,7 +196,7 @@ SINGLE_SELECT_OPTIONS = {
 }
 
 
-# ==================== 课程加载（data/db 源真相，缺失回退 roster）====================
+# ==================== 课程展示名 helper（运行时聚合用）====================
 
 def material_display_name(material: "Material") -> str:
     """资料展示名规则：名称-类型-贡献者(届别+姓名)。
@@ -212,27 +213,3 @@ def material_display_name(material: "Material") -> str:
     mtype = (material.material_type or "").strip() or "资料"
     name = (material.name or "").strip() or "未命名资料"
     return f"{name}-{mtype}-{c}"
-
-
-def _load_year(year: str) -> List[CourseData]:
-    """加载某学年课程：优先读 data/db/{year}.json，缺失则用 roster 基本字段构造。"""
-    from config.settings import settings           # 延迟导入，保持模块顶层轻量
-    from libs.data_adapter import read_course_db
-
-    records = read_course_db(settings.course_db_dir, year)
-    if records:
-        return [CourseData.from_dict(r) for r in records]
-    return [CourseData(**c) for c in COURSES_BY_YEAR.get(year, [])]
-
-
-def get_courses_by_year(year: str) -> List[CourseData]:
-    """获取指定学年的课程列表（CourseData）。"""
-    return _load_year(year)
-
-
-def get_all_courses() -> List[CourseData]:
-    """获取全部学年的课程列表（CourseData）。"""
-    courses: List[CourseData] = []
-    for year in WIKI_YEAR_NODES:
-        courses.extend(_load_year(year))
-    return courses

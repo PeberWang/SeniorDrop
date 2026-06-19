@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     oss_role_session_name: str = Field("ppe-giftbox-deploy", env="OSS_ROLE_SESSION_NAME")
     # CDN 域名（设置后 download_url 返回 CDN 地址，而非预签名 URL）
     oss_cdn_domain: str = Field("", env="OSS_CDN_DOMAIN")
+    # 公共读直链 base（bucket ACL 改公共读后使用，长期有效链接，不依赖 ttl）
+    # 示例：https://ppe-giftbox.oss-cn-beijing.aliyuncs.com
+    oss_public_base: Optional[str] = Field(None, env="OSS_PUBLIC_BASE")
 
     # 摘要存储目录（OCR 全文摘要落地，供飞书上传与目录聚合）
     summary_dir: Path = Field("./data/summaries", env="SUMMARY_DIR")
@@ -52,9 +55,6 @@ class Settings(BaseSettings):
     # 路径配置
     materials_base: Path = Field("./data/courses", env="MATERIALS_BASE")
     course_reform_notes_dir: Path = Field("./data/course_reform_notes", env="COURSE_REFORM_NOTES_DIR")
-
-    # 课程数据库目录（data/db/*.json，CourseData 源真相）
-    course_db_dir: Path = Field("./data/db", env="COURSE_DB_DIR")
 
     # 知识库配置
     wiki_space_name: str = Field("Demo PPE CloudSmart Giftbox", env="WIKI_SPACE_NAME")
@@ -83,7 +83,6 @@ class Settings(BaseSettings):
         self.log_file_path = self._resolve_path(self.log_file_path)
         self.cloud_stub_dir = self._resolve_path(self.cloud_stub_dir)
         self.summary_dir = self._resolve_path(self.summary_dir)
-        self.course_db_dir = self._resolve_path(self.course_db_dir)
 
     def _resolve_path(self, path: Path) -> Path:
         """解析路径，支持绝对路径和相对于项目根目录的路径"""
