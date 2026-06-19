@@ -317,14 +317,27 @@ class Pipeline:
     @log_operation("grant_bitable_pipeline")
     async def grant_bitable_pipeline(self, app_token: str, member_type: str,
                                      member_id: str, perm: str = "full_access") -> Dict[str, Any]:
-        """给 bitable 添加协作者（解决应用是 owner 时人没 UI 权限的问题）。"""
+        """给 bitable 添加协作者（解决应用是 owner 时人没 UI 权限的问题）。
+
+        member_type 支持：email / mobile / openid / userid / departmentid
+        （mobile 会自动转 openid，适合手机号注册的用户）。
+        """
         logger.info("开始添加 bitable 协作者", app_token=app_token,
                     member_type=member_type, member_id=member_id, perm=perm)
         feishu = FeishuAdapter(self.settings)
         try:
+            # mobile 需要先转 openid（drive API 不直接支持 mobile）
+            actual_member_type = member_type
+            actual_member_id = member_id
+            if member_type == "mobile":
+                actual_member_id = await feishu.resolve_to_openid(member_type, member_id)
+                actual_member_type = "openid"
+                logger.info("已将 mobile 解析为 openid",
+                            original=member_id, openid=actual_member_id)
+
             result = await feishu.add_doc_member(
                 token=app_token, doc_type="bitable",
-                member_type=member_type, member_id=member_id,
+                member_type=actual_member_type, member_id=actual_member_id,
                 perm=perm, notify=True,
             )
             logger.info("协作者添加完成", **result)
@@ -337,6 +350,13 @@ class Pipeline:
                                    member_id: str, perm_role: str = "admin") -> Dict[str, Any]:
         """给知识空间加成员（解决应用是 owner 时人没法 UI 操作的问题）。
 
+        member_type 支持：
+        - email（自动转 openid）
+        - mobile（自动转 openid，适合手机号注册的用户）
+        - openid（直接用）
+        - userid（直接用）
+        - departmentid（部门 ID，直接用）
+
         perm_role 角色：
         - admin：管理员（可以编辑、添加成员、改设置）
         - editor：编辑者（可以编辑所有页面）
@@ -346,8 +366,19 @@ class Pipeline:
                     member_type=member_type, member_id=member_id, perm_role=perm_role)
         feishu = FeishuAdapter(self.settings)
         try:
+            # wiki API 只接受 openid/userid/departmentid；email/mobile 需先转换
+            actual_member_type = member_type
+            actual_member_id = member_id
+            if member_type in ("email", "mobile"):
+                actual_member_id = await feishu.resolve_to_openid(member_type, member_id)
+                actual_member_type = "openid"
+                logger.info("已将 %s 解析为 openid", member_type,
+                            original=member_id, openid=actual_member_id)
+            elif member_type == "userid":
+                actual_member_type = "userid"  # wiki API 原生支持
+
             results = await feishu.add_wiki_space_members(
-                space_id, [{"member_type": member_type, "member_id": member_id,
+                space_id, [{"member_type": actual_member_type, "member_id": actual_member_id,
                             "perm_role": perm_role}]
             )
             if results and results[0].get("status") == "added":
@@ -373,6 +404,43 @@ class Pipeline:
             )
             logger.info("链接分享设置完成", **result)
             return result
+        finally:
+            await feishu.close()
+
+    @log_operation("open_wiki_pipeline")
+    async def open_wiki_pipeline(self, link_share_entity: str = "anyone_editable") -> Dict[str, Any]:
+        """对所有学年文档（docx）设置链接分享权限（凭链接即可访问/编辑）。
+
+        注意：这是对 wiki 空间里每个学年文档单独设置，不是对整个 wiki 空间。
+        飞书 wiki 空间本身没有「凭链接可编辑」开关，必须对每个页面单独开。
+        """
+        logger.info("开始设置 wiki 学年文档链接分享", link_share_entity=link_share_entity)
+        state = read_json(_STATE_FILE) or {}
+        year_nodes = state.get("year_nodes", {})
+        if not year_nodes:
+            return {"status": "error",
+                    "message": "deploy_state.json 中没有 year_nodes，请先跑 python deploy.py wiki"}
+
+        feishu = FeishuAdapter(self.settings)
+        results, failed = [], []
+        try:
+            for year, info in year_nodes.items():
+                obj_token = (info or {}).get("obj_token")
+                if not obj_token:
+                    continue
+                try:
+                    r = await feishu.open_doc_public(
+                        token=obj_token, doc_type="docx",
+                        link_share_entity=link_share_entity,
+                    )
+                    results.append({"year": year, "obj_token": obj_token, **r})
+                    logger.info("学年文档链接分享已设置", year=year)
+                except Exception as e:
+                    failed.append({"year": year, "error": str(e)})
+                    logger.warning("学年文档链接分享失败", year=year, error=str(e))
+
+            return {"success_count": len(results), "failed_count": len(failed),
+                    "results": results, "errors": failed}
         finally:
             await feishu.close()
 

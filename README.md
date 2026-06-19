@@ -150,6 +150,13 @@ python deploy.py wiki
 # 5. 给自己（管理员）加知识库权限（重要！否则 UI 里没法编辑）
 python deploy.py grant-wiki 你的邮箱@example.com
 # 默认 admin 角色；想给只读权限加 --perm viewer
+#
+# 邮箱注册 → grant-wiki your-email@example.com
+# 手机号注册 → grant-wiki 13800138000 --type mobile
+# 知道 openid/userid → grant-wiki ou_xxxxx --type openid
+
+# 或者用更简单的 open-wiki（凭链接即可编辑，不需要协作者 ID）
+# python deploy.py open-wiki
 
 # 6. 生成每门课的学习指南文档（基于课程基本信息，insights 为空时降级）
 python deploy.py docs
@@ -158,9 +165,16 @@ python deploy.py docs
 python deploy.py link
 ```
 
-完成后，打开飞书知识库（用刚 grant-wiki 加的邮箱登录），应能看到 4 个学年文档，每个文档里有这门学年的课程导航表，每行有可点击的「学习指南」链接。
+完成后，打开飞书知识库（用刚 grant-wiki 加的账号登录），应能看到 4 个学年文档，每个文档里有这门学年的课程导航表，每行有可点击的「学习指南」链接。
 
-**关于权限**：wiki 命令建的知识库默认应用是 owner，真实管理员账号无权编辑。所以第 5 步 `grant-wiki` 是必须的——把自己（或团队所有成员）加为知识库 admin，之后才能在飞书 UI 编辑、调整、整理文档。
+**关于权限**：wiki 命令建的知识库默认应用是 owner，真实管理员账号无权编辑。两种解决方式：
+
+| 方案 | 命令 | 适合场景 |
+|---|---|---|
+| **grant-wiki**（精细） | `python deploy.py grant-wiki <email或手机号> [--type email/mobile/openid/userid]` | 团队不大、想精细控制每个成员权限 |
+| **open-wiki**（简单） | `python deploy.py open-wiki` | demo / 内部小团队用，凭链接即可编辑 |
+
+手机号注册的用户用 `--type mobile`，命令内部会自动调飞书 contact API 把手机号解析成 openid。
 
 **保存链接到飞书群（重要！）**：把第 1 步的 bitable URL 和第 4 步的 wiki URL 都发到你的飞书工作群置顶保存。理由：
 - 应用是资源 owner，管理员在飞书 UI「我的文档」里默认看不到这些资源

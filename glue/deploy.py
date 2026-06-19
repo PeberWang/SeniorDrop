@@ -250,6 +250,14 @@ async def _deploy_open_bitable(settings: Settings,
     return await pipeline.open_bitable_pipeline(app_token, link_share_entity)
 
 
+async def _deploy_open_wiki(settings: Settings,
+                             link_share_entity: str = "anyone_editable") -> Dict[str, Any]:
+    """对 wiki 所有学年文档设置链接分享（凭链接即可访问/编辑，不需要协作者 ID）。"""
+    logger.info("开始设置 wiki 链接分享", link_share_entity=link_share_entity)
+    pipeline = Pipeline(settings)
+    return await pipeline.open_wiki_pipeline(link_share_entity)
+
+
 async def _deploy_fix_bitable(settings: Settings) -> Dict[str, Any]:
     """给已存在 bitable 的单选字段补上选项。"""
     logger.info("开始修复 bitable 单选选项")

@@ -14,9 +14,10 @@ from libs.feishu.docx_table import DocxTableMixin
 from libs.feishu.drive import DriveMixin
 from libs.feishu.bitable import BitableMixin
 from libs.feishu.perm import PermMixin
+from libs.feishu.contact import ContactMixin
 
 
-class FeishuAdapter(WikiMixin, DocxMixin, DocxTableMixin, DriveMixin, BitableMixin, PermMixin):
+class FeishuAdapter(WikiMixin, DocxMixin, DocxTableMixin, DriveMixin, BitableMixin, PermMixin, ContactMixin):
     """飞书API适配器 - 基于 lark-oapi 1.6.5"""
 
     def __init__(self, settings: Settings):

@@ -155,6 +155,23 @@ def open_bitable(
     asyncio.run(_deploy_open_bitable(settings, entity))
 
 
+@app.command(name="open-wiki")
+def open_wiki(
+    entity: str = typer.Option(
+        "anyone_editable", "--entity", "-e",
+        help="链接分享范围：closed / tenant_readable / tenant_editable / anyone_readable / anyone_editable",
+    ),
+):
+    """对 wiki 所有学年文档设置链接分享（凭链接即可访问/编辑）。
+
+    飞书 wiki 空间本身没有「凭链接可编辑」开关，这条命令对每个学年文档（docx）单独开。
+    比给每个管理员 grant-wiki 简单，但安全性较低（凭链接的任何人都能编辑）。
+    """
+    from glue.deploy import _deploy_open_wiki
+    settings = Settings()
+    asyncio.run(_deploy_open_wiki(settings, entity))
+
+
 @app.command(name="fix-bitable")
 def fix_bitable():
     """给已存在 bitable 的单选字段补上选项（不删现有数据）"""
