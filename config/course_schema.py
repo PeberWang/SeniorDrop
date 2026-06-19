@@ -37,8 +37,9 @@ class Material(BaseModel):
 
 class Contributor(BaseModel):
     """贡献者及其贡献描述（参与感设计：不止"传了什么"，更是"如何丰富了对课程的理解"）。"""
-    name: str = ""           # 贡献者，如 "22级小王"
-    contribution: str = ""   # 贡献描述
+    name: str = ""           # 贡献者，如 "22级小王"；心得作者带得分后缀 "22级小王（98分）"
+    contribution: str = ""   # 贡献描述（同一人多条贡献会合并，如 "贡献了 2 份资料 + 1 篇高分心得"）
+    score: str = ""          # 心得作者的得分（资料贡献者空），用于姓名后缀和排序
 
 
 class CourseData(BaseModel):

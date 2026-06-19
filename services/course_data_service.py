@@ -164,7 +164,7 @@ class CourseDataService:
                 ins = insights_by_course.get(name, [])
                 course.materials = mats
                 course.insights = ins
-                course.contributors = self._aggregate_contributors(mats)
+                course.contributors = self._aggregate_contributors(mats, ins)
 
             return list(courses.values())
         finally:
@@ -182,39 +182,98 @@ class CourseDataService:
         }
 
     @staticmethod
-    def _aggregate_contributors(materials: List[Material]) -> List[Contributor]:
-        """从 materials 聚合贡献者（届别+姓名 去重 + 自动生成 contribution）。"""
-        stats: Dict[str, Dict[str, Any]] = defaultdict(
-            lambda: {"count": 0, "types": set(), "grade": "", "raw": ""})
+    def _aggregate_contributors(
+        materials: List[Material],
+        insights: List[Insight],
+    ) -> List[Contributor]:
+        """聚合贡献者（合并 materials 贡献者 + insights 作者）。
+
+        - 用 (grade, name) 做 key 合并同一个人的多重贡献（心得 + 资料）
+        - 心得作者排前（按得分降序），资料贡献者排后
+        - 心得作者姓名带得分后缀："22级小赵（98分）"
+        - 贡献内容合并：例如 "贡献了 2 份资料（PPT、笔记）+ 1 篇高分心得"
+        """
+        stats: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
+            "count": 0,             # 资料数
+            "types": set(),         # 资料类型
+            "insight_count": 0,     # 心得数
+            "score": "",            # 心得作者得分（取首条非空）
+            "grade": "",
+            "raw": "",
+        })
+
+        def _key(grade: str, name: str) -> str:
+            return f"{grade}|{name}" if grade else name
+
         for m in materials:
             raw_name = (m.contributor or "").strip()
             if not raw_name:
                 continue
             grade = (m.grade or "").strip()
-            key = f"{grade}|{raw_name}" if grade else raw_name
-            stats[key]["count"] += 1
-            stats[key]["raw"] = raw_name
-            stats[key]["grade"] = grade
+            k = _key(grade, raw_name)
+            stats[k]["count"] += 1
+            stats[k]["raw"] = raw_name
+            stats[k]["grade"] = grade
             if m.material_type:
-                stats[key]["types"].add(m.material_type)
+                stats[k]["types"].add(m.material_type)
+
+        for ins in insights:
+            raw_name = (ins.author or "").strip()
+            if not raw_name:
+                continue
+            grade = (ins.grade or "").strip()
+            k = _key(grade, raw_name)
+            stats[k]["raw"] = raw_name
+            stats[k]["grade"] = grade
+            stats[k]["insight_count"] += 1
+            if not stats[k]["score"] and ins.score:
+                stats[k]["score"] = ins.score.strip()
+
+        def _score_to_num(score: str) -> float:
+            if not score:
+                return 0.0
+            cleaned = "".join(c for c in score if c.isdigit() or c == ".")
+            try:
+                return float(cleaned) if cleaned else 0.0
+            except (ValueError, TypeError):
+                return 0.0
+
+        def _build_base_name(s: Dict[str, Any]) -> str:
+            if "级" in s["raw"]:
+                return s["raw"]
+            if s["grade"]:
+                return f"{s['grade']}{s['raw']}"
+            return s["raw"]
+
+        # 排序：心得作者优先（按得分降序），其次资料贡献者
+        sorted_stats = sorted(stats.values(), key=lambda s: (
+            -1 if s["insight_count"] > 0 else 0,
+            -_score_to_num(s["score"]),
+            s["raw"],
+        ))
 
         contributors: List[Contributor] = []
         seen = set()
-        for s in stats.values():
-            if "级" in s["raw"]:
-                full_name = s["raw"]
-            elif s["grade"]:
-                full_name = f"{s['grade']}{s['raw']}"
-            else:
-                full_name = s["raw"]
-            if not full_name or full_name in seen:
+        for s in sorted_stats:
+            base_name = _build_base_name(s)
+            if not base_name or base_name in seen:
                 continue
-            types_str = "、".join(sorted(t for t in s["types"] if t)) or "多种类型"
+            display_name = base_name
+            if s["insight_count"] > 0 and s["score"]:
+                display_name = f"{base_name}（{s['score']}）"
+            parts = []
+            if s["count"] > 0:
+                types_str = "、".join(sorted(t for t in s["types"] if t)) or "多种类型"
+                parts.append(f"贡献了 {s['count']} 份资料（{types_str}）")
+            if s["insight_count"] > 0:
+                parts.append(f"{s['insight_count']} 篇高分心得")
+            contribution = " + ".join(parts) if parts else "资料与心得贡献"
             contributors.append(Contributor(
-                name=full_name,
-                contribution=f"贡献了 {s['count']} 份资料（{types_str}）",
+                name=display_name,
+                contribution=contribution,
+                score=s["score"],
             ))
-            seen.add(full_name)
+            seen.add(base_name)
         return contributors
 
 

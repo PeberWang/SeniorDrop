@@ -2,7 +2,7 @@
 
 > 把每届学长学姐的课程资料、心得、推荐理由，结构化沉淀下来，传给下一届同学。
 >
-> 适用任意院校、任意专业。下面以「南开大学 PPE 专业」为示例，你可以替换为自己的专业和课程清单。
+> 适用任意院校、任意专业。
 
 ---
 
@@ -30,21 +30,11 @@
 
 ### 3.1 准备环境（约 30-60 分钟）
 
-部署需要完成 7 件事。**第 1-3 件在本地电脑操作，第 4-7 件是注册 4 个云账号拿凭证**。
+分两步走：**先在本地电脑装好运行环境，再注册 4 个云账号拿访问凭证**。
 
-**本地电脑（3 件事）**：
+**第一步：本地准备**
 
-1. **检查 / 装 Python 3.10+**（项目代码的解释器，无法自动装）
-
-   先看看你电脑是否已经有 Python：
-   - Windows：按 Win+R → 输入 `cmd` 回车 → 在 cmd 里输入 `python --version`
-   - macOS/Linux：终端输入 `python3 --version`
-
-   - 如果看到 `Python 3.10.x` 或更新 → 已装，跳到第 2 步
-   - 如果看到 `Python 3.9` 或更旧 → 装过但版本太旧，setup 脚本会提示升级
-   - 如果提示「不是内部或外部命令」→ 没装，去 https://www.python.org/downloads/ 下载（Windows 安装时**务必勾选底部「Add Python.exe to PATH」**）
-
-2. **下载项目代码**
+1. **下载项目代码**
 
    ```bash
    git clone https://github.com/PeberWang/PPE-CloudSmart-GiftBox.git
@@ -53,17 +43,25 @@
 
    不熟悉 git？GitHub 页面点「Code」→「Download ZIP」→ 解压也行。
 
-3. **双击 `setup.bat`**（Windows）或 **跑 `bash setup.sh`**（macOS/Linux）
-   - 自动检测 Python 版本（过旧会提示升级，没装会打开下载页）
-   - 自动创建虚拟环境（venv，不污染系统 Python）
-   - 自动检测并装 LibreOffice（Office 文档 OCR 用）
-   - 自动装 Python 依赖（装在 venv 里）
-   - 自动创建 `.env` 配置文件
-   - 脚本逻辑和排错见 [00 § 2.2](docs/00-快速开始.md#22-一键装所有依赖--配置推荐)
+2. **在项目目录里跑一行命令**，自动检查 Python、装虚拟环境、装 LibreOffice、装依赖、生成 `.env` 配置文件
 
-**注册 4 个云账号拿凭证（4 件事）**：
+   已经 cd 进项目目录的话，直接打：
 
-按 [00 § 1.1-1.4](docs/00-快速开始.md#一准备账号--装环境) 操作，每个都有详细步骤（包括截图级菜单路径）：
+   Windows（cmd 或 PowerShell）：
+   ```cmd
+   setup.bat
+   ```
+
+   macOS / Linux：
+   ```bash
+   bash setup.sh
+   ```
+
+   Python 没装或版本太旧（< 3.10）？脚本会自动打开下载页引导你装，装完重新跑一次即可。脚本逻辑和排错见 [00 § 2.2](docs/00-快速开始.md#22-一键装所有依赖--配置推荐)。
+
+**第二步：注册 4 个云账号拿凭证**：
+
+按 [00 § 1.1-1.4](docs/00-快速开始.md#一准备账号--装环境) 操作，每个账号都有截图级菜单路径 + 关键提醒（OSS bucket 选公共读、AccessKey Secret 立刻复制保存等）：
 
 | 账号 | 用途 | 拿到什么 |
 |---|---|---|
@@ -71,11 +69,6 @@
 | 阿里云 OSS | 资料归档存储 | AK + SK + bucket 名 + endpoint |
 | DeepSeek | LLM（生成课程文档 + 摘要） | API Key |
 | 智谱 GLM-OCR | OCR API | API Key |
-
-**三个特别提醒**：
-- 装 Python 时**务必勾选「Add Python to PATH」**（Windows）
-- 阿里云 OSS bucket 读写权限选「**公共读**」（学生凭链接直接下载）
-- AccessKey Secret 只显示一次，**立刻复制保存**
 
 ### 3.2 配置 .env
 
