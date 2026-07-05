@@ -20,7 +20,7 @@
 
 ## 工作原理
 
-学生通过飞书表单提交资料 → 资料/心得数据入库于飞书 bitable → 资料原件/心得原件经由 `archive-materials` 归档到阿里云 OSS → 调用 `ocr-materials` 命令提取原件全文为 Markdown 格式 + 形成 LLM 摘要 → 调用 `sync` 命令将摘要存至飞书Drive，并将原件下载链接回填至飞书 bitable → 调用 `docs` 命令用生成课程学习指南（飞书云文档） → 调用 `link` 命令把云文档链接回填到学年导航表。
+学生通过飞书表单提交资料 → 资料/心得数据入库于飞书 bitable → 资料原件/心得原件经由 `archive-materials` 归档到阿里云 OSS → 调用 `ocr-materials` 命令提取原件全文为 Markdown 格式 + 形成 LLM 摘要 → 调用 `sync` 命令将摘要存至飞书 Drive，并将原件下载链接回填至飞书 bitable → 调用 `docs` 命令用生成课程学习指南（飞书云文档） → 调用 `link` 命令把云文档链接回填到学年导航表。
 
 ---
 
