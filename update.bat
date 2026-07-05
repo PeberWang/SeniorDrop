@@ -10,7 +10,7 @@ echo.
 if not exist .git (
     echo [错误] 这份项目不是通过 git 下载的，无法自动更新。
     echo.
-    echo 请到 https://github.com/PeberWang/PPE-CloudSmart-GiftBox
+    echo 请到 https://github.com/PeberWang/SeniorDrop
     echo 点击绿色 Code 按钮 - Download ZIP，解压后用以下文件夹覆盖你的项目目录：
     echo   deploy.py / glue/ / services/ / libs/ / config/ / tools/
     echo   setup.bat / start.bat / update.bat

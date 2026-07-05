@@ -3,6 +3,8 @@
 > 把每届学长学姐的课程资料、心得、推荐理由，自动化和结构化地沉淀下来，弱化专业传承活动的激励问题。
 >
 > 适用任意院校的任意专业。
+>
+> 提示：文中链接建议 `Ctrl + 点击` 在新标签页打开，避免覆盖当前页面。
 
 ---
 
@@ -43,8 +45,8 @@
    命令行打开后，跑：
 
    ```bash
-   git clone https://github.com/PeberWang/PPE-CloudSmart-GiftBox.git
-   cd PPE-CloudSmart-GiftBox
+   git clone https://github.com/PeberWang/SeniorDrop.git
+   cd SeniorDrop
    ```
 
    提示「git 不是内部或外部命令」？系统没装 git，去 https://git-scm.com/downloads 下载安装包装一下，装完**关闭当前命令行窗口重新打开**（让 PATH 生效），再跑上面的命令。
@@ -84,6 +86,8 @@
 
 setup 脚本已经帮你创建了 `.env` 文件。用记事本打开它，按 [00 § 三](docs/00-快速开始.md#三配置-env-文件) 填入凭证。
 
+> **记事本提示**：Windows 自带记事本里，下划线 `_` 显示极细，看起来像空格。例如 App ID `cli_a928xxxxxxxxxxxxxx`，`cli` 和 `a928` 之间是下划线，不是空格。照抄即可，不要替换成空格。
+
 关键字段（字段含义详见 [04-技术原理.md](docs/04-技术原理.md)）：
 
 ```bash
@@ -91,12 +95,14 @@ FEISHU_APP_ID=cli_xxxxxxxxxxxxxxxx                  # 飞书应用 ID
 FEISHU_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx   # 飞书应用 Secret
 LLM_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx      # DeepSeek API Key
 GLM_API_KEY=xxxxxxxxxxxxxxxx.xxxxxxxxxxxxxxxx        # 智谱 GLM API Key
+CLOUD_DRIVE_BACKEND=aliyun_oss                       # 必须改成 aliyun_oss（否则资料不会上传到阿里云）
 OSS_BUCKET=your-bucket-name                          # 你的 OSS bucket 名
-OSS_ENDPOINT=https://oss-cn-beijing.aliyuncs.com     # 你的 OSS endpoint
+OSS_ENDPOINT=https://oss-cn-beijing.aliyuncs.com     # 你的 OSS endpoint（必须带 https://）
 OSS_ACCESS_KEY_ID=LTAIxxxxxxxxxxxxxxxx               # 阿里云 AK
 OSS_ACCESS_KEY_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx# 阿里云 SK
-OSS_PUBLIC_BASE=https://your-bucket-name.oss-cn-beijing.aliyuncs.com  # 公共读直链
-WIKI_SPACE_NAME=XX 专业课程大礼包                   # 你的专业名
+# 公共读直链——拼法：https://你的bucket名.你的endpoint去掉https://
+OSS_PUBLIC_BASE=https://your-bucket-name.oss-cn-beijing.aliyuncs.com
+WIKI_SPACE_NAME=XX 专业课程大礼包                   # 你的专业名，自己定
 # BITABLE_APP_TOKEN 先留空，下一步 init-bitable 后填回
 ```
 
@@ -294,7 +300,11 @@ python deploy.py reset-bitable --yes
 
 跑完会显示「更新完成」，通常只要几秒到十几秒。整个过程**不需要你输入任何命令**。
 
-**Q2：更新会不会破坏我维护的知识库？**
+**Q2：更新会不会覆盖我的 .env 配置？**
+
+**不会。** `.env` 文件在项目的 `.gitignore` 名单里，git pull 不会覆盖它。`setup.bat` 和 `update.bat` 也都不会重写 `.env`——setup.bat 的规则是"没有才建，已有跳过"（你跑第二次时看到的 `".env 已存在，保留你的配置"` 就是这句话在起作用）。你的 API 密钥和配置永久安全。
+
+**Q3：更新会不会破坏我维护的知识库？**
 
 **不会。** 你维护的知识库 = 飞书云端的 bitable 三张表 + wiki 文档 + 阿里云 OSS 文件。这些**全部在云端，不在代码仓库里**。`update.bat` 只换 Python 脚本（`deploy.py` / `glue/` / `services/` / `config/`），永远碰不到你的云端数据。
 
